@@ -1,5 +1,7 @@
 import React from 'react';
-import { Search, Filter, Plus } from 'lucide-react';
+import { Search, Filter, Plus, Sparkles } from 'lucide-react';
+import SemanticSearch from './SemanticSearch';
+import { SemanticSearchResult } from '../services/semanticSearchService';
 
 interface BookmarkControlsProps {
   searchTerm: string;
@@ -15,6 +17,7 @@ interface BookmarkControlsProps {
   folderNames: string[];
   onAddBookmark: (e: React.FormEvent) => void;
   loading: boolean;
+  onSemanticSearchResult?: (result: SemanticSearchResult) => void;
 }
 
 export const BookmarkControls: React.FC<BookmarkControlsProps> = ({
@@ -30,21 +33,68 @@ export const BookmarkControls: React.FC<BookmarkControlsProps> = ({
   setNewBookmark,
   folderNames,
   onAddBookmark,
-  loading
+  loading,
+  onSemanticSearchResult
 }) => {
+  const [useSemanticSearch, setUseSemanticSearch] = React.useState(true);
+
+  const handleSemanticResult = (result: SemanticSearchResult) => {
+    // Set the search term to the selected result's title for filtering
+    setSearchTerm(result.title);
+    
+    // Notify parent component if callback provided
+    if (onSemanticSearchResult) {
+      onSemanticSearchResult(result);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 mb-8">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Search */}
+        {/* Search - with semantic search toggle */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search bookmarks..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+          <div className="flex items-center space-x-2 mb-2">
+            <button
+              onClick={() => setUseSemanticSearch(!useSemanticSearch)}
+              className={`flex items-center px-2 py-1 text-xs rounded-full transition-colors ${
+                useSemanticSearch 
+                  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+              title={useSemanticSearch ? 'Using AI-powered semantic search' : 'Using basic text search'}
+            >
+              {useSemanticSearch ? (
+                <>
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  Smart Search
+                </>
+              ) : (
+                <>
+                  <Search className="w-3 h-3 mr-1" />
+                  Basic Search
+                </>
+              )}
+            </button>
+          </div>
+          
+          {useSemanticSearch ? (
+            <SemanticSearch
+              onResultSelect={handleSemanticResult}
+              placeholder="Search bookmarks intelligently..."
+              className="w-full"
+            />
+          ) : (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search bookmarks..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          )}
         </div>
 
         {/* Folder Filter */}
@@ -86,6 +136,16 @@ export const BookmarkControls: React.FC<BookmarkControlsProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Search Mode Indicator */}
+      {useSemanticSearch && (
+        <div className="mt-3 flex items-center text-sm text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
+          <Sparkles className="w-4 h-4 mr-2" />
+          <span>
+            AI-powered semantic search is active. Find bookmarks by meaning, not just exact words.
+          </span>
+        </div>
+      )}
 
       {/* Add Bookmark Form */}
       {showAddForm && (

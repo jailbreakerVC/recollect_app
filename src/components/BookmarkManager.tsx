@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug, TestTube, Wifi } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug, TestTube, Wifi, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { ExtensionService } from '../services/extensionService';
 import { BookmarkService } from '../services/bookmarkService';
+import { SemanticSearchService, SemanticSearchResult } from '../services/semanticSearchService';
 import { ToastContainer, useToast } from './Toast';
 import { BookmarkGrid } from './BookmarkGrid';
 import { BookmarkControls } from './BookmarkControls';
@@ -35,6 +36,8 @@ const BookmarkManager: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
   const [extensionStatus, setExtensionStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
+  const [semanticSearchResults, setSemanticSearchResults] = useState<SemanticSearchResult[]>([]);
+  const [useSemanticResults, setUseSemanticResults] = useState(false);
 
   // Initialize extension service
   useEffect(() => {
@@ -124,24 +127,52 @@ const BookmarkManager: React.FC = () => {
     }
   }, [user]);
 
-  const filteredBookmarks = bookmarks
-    .filter(bookmark => {
-      const matchesSearch = bookmark.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           bookmark.url.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesFolder = selectedFolder === 'all' || bookmark.folder === selectedFolder;
-      return matchesSearch && matchesFolder;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'title':
-          return a.title.localeCompare(b.title);
-        case 'folder':
-          return (a.folder || '').localeCompare(b.folder || '');
-        case 'date':
-        default:
-          return new Date(b.date_added).getTime() - new Date(a.date_added).getTime();
-      }
-    });
+  // Update embeddings when bookmarks change
+  useEffect(() => {
+    if (user && bookmarks.length > 0) {
+      const updateEmbeddings = async () => {
+        try {
+          await SemanticSearchService.updateUserEmbeddings(user.id);
+          console.log('✅ Embeddings updated for user bookmarks');
+        } catch (error) {
+          console.warn('⚠️ Failed to update embeddings:', error);
+        }
+      };
+
+      // Update embeddings after a short delay to avoid blocking UI
+      const timeoutId = setTimeout(updateEmbeddings, 2000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [user, bookmarks.length]);
+
+  const filteredBookmarks = useSemanticResults && semanticSearchResults.length > 0
+    ? semanticSearchResults.map(result => {
+        // Find the full bookmark data
+        const fullBookmark = bookmarks.find(b => b.id === result.id);
+        return fullBookmark ? {
+          ...fullBookmark,
+          _semanticScore: result.similarity_score,
+          _searchType: result.search_type
+        } : null;
+      }).filter(Boolean)
+    : bookmarks
+        .filter(bookmark => {
+          const matchesSearch = bookmark.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                               bookmark.url.toLowerCase().includes(searchTerm.toLowerCase());
+          const matchesFolder = selectedFolder === 'all' || bookmark.folder === selectedFolder;
+          return matchesSearch && matchesFolder;
+        })
+        .sort((a, b) => {
+          switch (sortBy) {
+            case 'title':
+              return a.title.localeCompare(b.title);
+            case 'folder':
+              return (a.folder || '').localeCompare(b.folder || '');
+            case 'date':
+            default:
+              return new Date(b.date_added).getTime() - new Date(a.date_added).getTime();
+          }
+        });
 
   const getFolderNames = () => {
     const folderNames = Array.from(new Set(bookmarks.map(b => b.folder).filter(Boolean)));
@@ -271,6 +302,16 @@ const BookmarkManager: React.FC = () => {
           'Sync Complete', 
           `Successfully synced ${result.total} bookmarks. Changes: ${changes.join(', ')}`
         );
+
+        // Update embeddings for new bookmarks
+        if (result.inserted > 0) {
+          try {
+            await SemanticSearchService.updateUserEmbeddings(user!.id);
+            console.log('✅ Embeddings updated for new bookmarks');
+          } catch (embError) {
+            console.warn('⚠️ Failed to update embeddings:', embError);
+          }
+        }
       } else {
         showSuccess('Sync Complete', 'Your bookmarks are already up to date');
       }
@@ -413,6 +454,48 @@ const BookmarkManager: React.FC = () => {
     }
   };
 
+  const handleSemanticSearchResult = (result: SemanticSearchResult) => {
+    console.log('🔍 Semantic search result selected:', result);
+    
+    // Perform a semantic search to get related results
+    if (user) {
+      SemanticSearchService.searchBookmarks(result.title, {
+        userId: user.id,
+        maxResults: 20,
+        similarityThreshold: 0.2
+      }).then(results => {
+        setSemanticSearchResults(results);
+        setUseSemanticResults(true);
+        console.log(`✅ Found ${results.length} semantic search results`);
+      }).catch(error => {
+        console.error('❌ Semantic search failed:', error);
+        setUseSemanticResults(false);
+      });
+    }
+  };
+
+  const handleTestSemanticSearch = async () => {
+    if (!user) return;
+    
+    const loadingToastId = showLoading('Testing Semantic Search', 'Running semantic search test...');
+    
+    try {
+      const result = await SemanticSearchService.testSemanticSearch(user.id);
+      removeToast(loadingToastId);
+      
+      if (result.success) {
+        showSuccess('Semantic Search Test', result.message);
+        console.log('Semantic search test results:', result.sampleResults);
+      } else {
+        showError('Semantic Search Test Failed', result.message);
+      }
+    } catch (err) {
+      removeToast(loadingToastId);
+      const message = err instanceof Error ? err.message : 'Semantic search test failed';
+      showError('Semantic Search Test Error', message);
+    }
+  };
+
   if (loading && bookmarks.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
@@ -459,6 +542,11 @@ const BookmarkManager: React.FC = () => {
                        extensionStatus === 'available' ? 'Connected' : 'Not Available'}
                     </span>
                   </div>
+                  <div className="flex items-center">
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    <span>AI Search</span>
+                    <div className="w-2 h-2 rounded-full ml-2 bg-purple-500" />
+                  </div>
                   {syncStatus && (
                     <div className="flex items-center text-blue-600">
                       <Clock className="w-4 h-4 mr-1" />
@@ -470,7 +558,7 @@ const BookmarkManager: React.FC = () => {
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500">
-                {bookmarks.length} bookmarks
+                {useSemanticResults ? `${filteredBookmarks.length} semantic results` : `${bookmarks.length} bookmarks`}
               </div>
               {process.env.NODE_ENV === 'development' && (
                 <>
@@ -481,6 +569,14 @@ const BookmarkManager: React.FC = () => {
                   >
                     <TestTube className="w-4 h-4 mr-2" />
                     Test DB
+                  </button>
+                  <button
+                    onClick={handleTestSemanticSearch}
+                    className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                    title="Test semantic search"
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Test AI
                   </button>
                   <button
                     onClick={handleDebugSync}
@@ -564,6 +660,30 @@ const BookmarkManager: React.FC = () => {
           </div>
         )}
 
+        {/* Semantic Search Results Indicator */}
+        {useSemanticResults && semanticSearchResults.length > 0 && (
+          <div className="mb-6 bg-purple-50 border border-purple-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Sparkles className="w-5 h-5 text-purple-600 mr-2" />
+                <span className="text-purple-800 font-medium">
+                  Showing {semanticSearchResults.length} AI-powered search results
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setUseSemanticResults(false);
+                  setSemanticSearchResults([]);
+                  setSearchTerm('');
+                }}
+                className="text-purple-600 hover:text-purple-800 text-sm"
+              >
+                Clear search
+              </button>
+            </div>
+          </div>
+        )}
+
         <BookmarkControls
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
@@ -578,6 +698,7 @@ const BookmarkManager: React.FC = () => {
           folderNames={getFolderNames()}
           onAddBookmark={handleAddBookmark}
           loading={loading}
+          onSemanticSearchResult={handleSemanticSearchResult}
         />
 
         <BookmarkGrid
