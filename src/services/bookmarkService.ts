@@ -362,4 +362,29 @@ export class BookmarkService {
       return 0;
     }
   }
+
+  /**
+   * Get all bookmarks from database (for debugging)
+   */
+  static async getAllBookmarks(): Promise<DatabaseBookmark[]> {
+    try {
+      console.log('🔍 Fetching ALL bookmarks from database for debugging...');
+      
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Failed to fetch all bookmarks:', error);
+        throw new Error(`Failed to fetch all bookmarks: ${error.message}`);
+      }
+
+      console.log(`✅ Fetched ${data?.length || 0} total bookmarks from database`);
+      return data || [];
+    } catch (err) {
+      console.error('Error getting all bookmarks:', err);
+      return [];
+    }
+  }
 }
