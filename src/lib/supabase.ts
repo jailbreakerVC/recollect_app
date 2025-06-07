@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { Logger } from '../utils/logger';
 
 // Environment validation
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -21,31 +22,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Database types
-export interface DatabaseBookmark {
-  id: string;
-  user_id: string;
-  chrome_bookmark_id?: string;
-  title: string;
-  url: string;
-  folder?: string;
-  parent_id?: string;
-  date_added: string;
-  created_at: string;
-  updated_at: string;
-}
-
 // Test connection on module load
 supabase
   .from('bookmarks')
   .select('count', { count: 'exact', head: true })
   .then(({ error }) => {
     if (error) {
-      console.error('❌ Supabase connection failed:', error.message);
+      Logger.error('Supabase', 'Connection failed', error);
     } else {
-      console.log('✅ Supabase connected successfully');
+      Logger.info('Supabase', 'Connected successfully');
     }
   })
   .catch(err => {
-    console.error('❌ Supabase connection error:', err.message);
+    Logger.error('Supabase', 'Connection error', err);
   });

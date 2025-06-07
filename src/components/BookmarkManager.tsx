@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug, TestTube, Wifi } from 'lucide-react';
+import { Bookmark, RefreshCw, Chrome, TestTube, Bug } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
-import { ExtensionService } from '../services/extensionService';
+import { extensionService } from '../services/extensionService';
 import { BookmarkService } from '../services/bookmarkService';
 import { ToastContainer, useToast } from './Toast';
 import { BookmarkGrid } from './BookmarkGrid';
 import { BookmarkControls } from './BookmarkControls';
 import { StatusCards } from './StatusCards';
 import { DebugPanel } from './DebugPanel';
+import { ConnectionStatus, SortOption } from '../types';
+import { Logger } from '../utils/logger';
 
 const BookmarkManager: React.FC = () => {
   const { user } = useAuth();
@@ -17,6 +19,7 @@ const BookmarkManager: React.FC = () => {
     loading,
     error,
     extensionAvailable,
+    extensionStatus,
     syncWithExtension,
     addBookmark,
     removeBookmark,
@@ -29,69 +32,11 @@ const BookmarkManager: React.FC = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'date' | 'title' | 'folder'>('date');
+  const [sortBy, setSortBy] = useState<SortOption>('date');
   const [showAddForm, setShowAddForm] = useState(false);
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
   const [debugInfo, setDebugInfo] = useState<any>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
-  const [extensionStatus, setExtensionStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
-
-  // Initialize extension service
-  useEffect(() => {
-    console.log('📱 BookmarkManager: Setting up extension service');
-    ExtensionService.initialize();
-    
-    return () => {
-      console.log('📱 BookmarkManager: Component unmounting');
-    };
-  }, []);
-
-  // Enhanced extension availability detection
-  useEffect(() => {
-    let mounted = true;
-    
-    const checkExtensionStatus = async () => {
-      console.log('🔍 Checking extension status...');
-      setExtensionStatus('checking');
-      
-      try {
-        // Force check extension availability
-        const available = await ExtensionService.forceCheckAvailability();
-        
-        if (mounted) {
-          setExtensionStatus(available ? 'available' : 'unavailable');
-          console.log('📱 Extension status updated:', available ? 'available' : 'unavailable');
-        }
-      } catch (error) {
-        console.error('❌ Extension status check failed:', error);
-        if (mounted) {
-          setExtensionStatus('unavailable');
-        }
-      }
-    };
-
-    // Check immediately
-    checkExtensionStatus();
-
-    // Set up periodic checks
-    const interval = setInterval(checkExtensionStatus, 3000);
-
-    // Listen for extension ready events
-    const handleExtensionReady = () => {
-      console.log('✅ Extension ready event received');
-      if (mounted) {
-        setExtensionStatus('available');
-      }
-    };
-
-    window.addEventListener('bookmarkExtensionReady', handleExtensionReady);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-      window.removeEventListener('bookmarkExtensionReady', handleExtensionReady);
-    };
-  }, []);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
 
   // Test database connection on mount
   useEffect(() => {
@@ -115,7 +60,7 @@ const BookmarkManager: React.FC = () => {
           const debug = await BookmarkService.debugUserContext();
           setDebugInfo(debug);
         } catch (err) {
-          console.error('Failed to get debug info:', err);
+          Logger.error('BookmarkManager', 'Failed to get debug info', err);
           setDebugInfo({ error: 'Failed to get debug info' });
         }
       };
@@ -170,7 +115,7 @@ const BookmarkManager: React.FC = () => {
       removeToast(loadingToastId);
       const message = err instanceof Error ? err.message : 'Failed to add bookmark';
       showError('Add Failed', message);
-      console.error('Failed to add bookmark:', err);
+      Logger.error('BookmarkManager', 'Failed to add bookmark', err);
     }
   };
 
@@ -189,16 +134,13 @@ const BookmarkManager: React.FC = () => {
         removeToast(loadingToastId);
         const message = err instanceof Error ? err.message : 'Failed to remove bookmark';
         showError('Remove Failed', message);
-        console.error('Failed to remove bookmark:', err);
+        Logger.error('BookmarkManager', 'Failed to remove bookmark', err);
       }
     }
   };
 
   const handleSyncWithExtension = async () => {
-    console.log('🔄 Starting manual sync process...');
-    console.log('User ID:', user?.id);
-    console.log('Extension available:', extensionAvailable);
-    console.log('Extension status:', extensionStatus);
+    Logger.info('BookmarkManager', 'Starting manual sync process');
 
     if (extensionStatus !== 'available') {
       showError('Extension Not Available', 'Chrome extension is not installed or not responding. Please install the extension and refresh the page.');
@@ -209,48 +151,33 @@ const BookmarkManager: React.FC = () => {
 
     try {
       // Test extension connection first
-      console.log('🧪 Testing extension connection...');
       updateToast(loadingToastId, { 
         title: 'Syncing Bookmarks', 
         message: 'Testing extension connection...' 
       });
 
-      let extensionBookmarks;
-      try {
-        extensionBookmarks = await ExtensionService.getBookmarks();
-        console.log('✅ Extension connection successful, got', extensionBookmarks.length, 'bookmarks');
-        console.log('Sample extension bookmarks:', extensionBookmarks.slice(0, 3));
-      } catch (extError) {
-        console.error('❌ Extension connection failed:', extError);
+      const extTest = await extensionService.testConnection();
+      if (!extTest.success) {
         removeToast(loadingToastId);
-        showError('Extension Error', `Failed to connect to Chrome extension: ${extError instanceof Error ? extError.message : 'Unknown error'}`);
+        showError('Extension Error', `Failed to connect to Chrome extension: ${extTest.message}`);
         return;
       }
 
       // Test database connection
-      console.log('🧪 Testing database connection...');
       updateToast(loadingToastId, { 
         title: 'Syncing Bookmarks', 
         message: 'Testing database connection...' 
       });
 
-      try {
-        const dbTest = await BookmarkService.testConnection(user!.id);
-        console.log('Database test result:', dbTest);
-        if (!dbTest.success) {
-          throw new Error(dbTest.message);
-        }
-      } catch (dbError) {
-        console.error('❌ Database connection failed:', dbError);
+      const dbTest = await BookmarkService.testConnection(user!.id);
+      if (!dbTest.success) {
         removeToast(loadingToastId);
-        showError('Database Error', `Failed to connect to database: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`);
+        showError('Database Error', `Failed to connect to database: ${dbTest.message}`);
         return;
       }
 
-      // Now perform the actual sync
-      console.log('🔄 Starting actual sync...');
+      // Perform the actual sync
       const result = await syncWithExtension((status) => {
-        console.log('Sync progress:', status);
         updateToast(loadingToastId, { 
           title: 'Syncing Bookmarks', 
           message: status 
@@ -258,8 +185,6 @@ const BookmarkManager: React.FC = () => {
       });
       
       removeToast(loadingToastId);
-      
-      console.log('✅ Sync completed with result:', result);
       
       if (result.hasChanges) {
         const changes = [];
@@ -277,8 +202,8 @@ const BookmarkManager: React.FC = () => {
     } catch (err) {
       removeToast(loadingToastId);
       const message = err instanceof Error ? err.message : 'Failed to sync with extension';
-      console.error('❌ Sync failed with error:', err);
       showError('Sync Failed', message);
+      Logger.error('BookmarkManager', 'Sync failed', err);
     }
   };
 
@@ -293,7 +218,7 @@ const BookmarkManager: React.FC = () => {
       removeToast(loadingToastId);
       const message = err instanceof Error ? err.message : 'Failed to refresh bookmarks';
       showError('Refresh Failed', message);
-      console.error('Failed to refresh bookmarks:', err);
+      Logger.error('BookmarkManager', 'Failed to refresh bookmarks', err);
     }
   };
 
@@ -335,22 +260,15 @@ const BookmarkManager: React.FC = () => {
     }
   };
 
-  // Debug sync button for development
   const handleDebugSync = async () => {
-    console.log('🐛 DEBUG SYNC: Starting detailed sync analysis...');
-    console.log('🐛 User:', user);
-    console.log('🐛 Extension available:', extensionAvailable);
-    console.log('🐛 Extension status:', extensionStatus);
+    Logger.info('BookmarkManager', 'Starting debug sync analysis');
     
-    // Check prerequisites
     if (!user) {
-      console.error('🐛 DEBUG SYNC: User not logged in');
       showError('Debug Sync Failed', 'User not logged in');
       return;
     }
     
     if (extensionStatus !== 'available') {
-      console.error('🐛 DEBUG SYNC: Extension not available, status:', extensionStatus);
       showError('Debug Sync Failed', `Chrome extension not available (status: ${extensionStatus})`);
       return;
     }
@@ -358,56 +276,27 @@ const BookmarkManager: React.FC = () => {
     const loadingToastId = showLoading('Debug Sync', 'Analyzing sync data...');
     
     try {
-      // Test extension connection first
-      console.log('🐛 Testing extension connection...');
-      const extTest = await ExtensionService.testConnection();
-      console.log('🐛 Extension test result:', extTest);
-      
+      const extTest = await extensionService.testConnection();
       if (!extTest.success) {
         removeToast(loadingToastId);
         showError('Extension Test Failed', extTest.message);
         return;
       }
       
-      // Get extension bookmarks
-      console.log('🐛 Getting extension bookmarks...');
-      const extensionBookmarks = await ExtensionService.getBookmarks();
-      console.log('🐛 Extension bookmarks:', extensionBookmarks);
-      
-      // Get database bookmarks
-      console.log('🐛 Getting database bookmarks...');
+      const extensionBookmarks = await extensionService.getBookmarks();
       const databaseBookmarks = await BookmarkService.getBookmarks(user.id);
-      console.log('🐛 Database bookmarks:', databaseBookmarks);
-      
-      // Get total database count
       const totalCount = await BookmarkService.getAllBookmarksCount();
-      console.log('🐛 Total database bookmarks:', totalCount);
       
-      // Analyze differences
       const extIds = new Set(extensionBookmarks.map(b => b.id));
       const dbChromeIds = new Set(databaseBookmarks.map(b => b.chrome_bookmark_id).filter(Boolean));
       
       const newInExtension = extensionBookmarks.filter(b => !dbChromeIds.has(b.id));
       const removedFromExtension = databaseBookmarks.filter(b => b.chrome_bookmark_id && !extIds.has(b.chrome_bookmark_id));
       
-      const analysis = {
-        extensionCount: extensionBookmarks.length,
-        databaseCount: databaseBookmarks.length,
-        totalDatabaseCount: totalCount,
-        newInExtension: newInExtension.length,
-        removedFromExtension: removedFromExtension.length,
-        newBookmarks: newInExtension.slice(0, 3),
-        removedBookmarks: removedFromExtension.slice(0, 3),
-        extensionTest: extTest
-      };
-      
-      console.log('🐛 Analysis:', analysis);
-      
       removeToast(loadingToastId);
-      showSuccess('Debug Analysis Complete', `Extension: ${analysis.extensionCount} bookmarks, Database: ${analysis.databaseCount} bookmarks, New: ${analysis.newInExtension}, Removed: ${analysis.removedFromExtension}. Check console for details.`);
+      showSuccess('Debug Analysis Complete', `Extension: ${extensionBookmarks.length} bookmarks, Database: ${databaseBookmarks.length} bookmarks, New: ${newInExtension.length}, Removed: ${removedFromExtension.length}. Check console for details.`);
       
     } catch (err) {
-      console.error('🐛 Debug sync failed:', err);
       removeToast(loadingToastId);
       showError('Debug Sync Failed', err instanceof Error ? err.message : 'Unknown error');
     }
@@ -440,8 +329,7 @@ const BookmarkManager: React.FC = () => {
                 <h1 className="text-2xl font-bold text-gray-900">Bookmark Manager</h1>
                 <div className="flex items-center space-x-4 text-sm text-gray-600">
                   <div className="flex items-center">
-                    <Database className="w-4 h-4 mr-1" />
-                    <span>Supabase Database</span>
+                    <span>Database</span>
                     <div className={`w-2 h-2 rounded-full ml-2 ${
                       connectionStatus === 'connected' ? 'bg-green-500' :
                       connectionStatus === 'disconnected' ? 'bg-red-500' : 'bg-yellow-500'
@@ -449,7 +337,7 @@ const BookmarkManager: React.FC = () => {
                   </div>
                   <div className="flex items-center">
                     <Chrome className="w-4 h-4 mr-1" />
-                    <span>Chrome Extension</span>
+                    <span>Extension</span>
                     <div className={`w-2 h-2 rounded-full ml-2 ${
                       extensionStatus === 'available' ? 'bg-green-500' :
                       extensionStatus === 'unavailable' ? 'bg-red-500' : 'bg-yellow-500'
@@ -461,7 +349,7 @@ const BookmarkManager: React.FC = () => {
                   </div>
                   {syncStatus && (
                     <div className="flex items-center text-blue-600">
-                      <Clock className="w-4 h-4 mr-1" />
+                      <RefreshCw className="w-4 h-4 mr-1" />
                       <span>{syncStatus}</span>
                     </div>
                   )}
@@ -545,7 +433,6 @@ const BookmarkManager: React.FC = () => {
         {error && (
           <div className="mb-8 bg-red-50 border border-red-200 rounded-lg p-6">
             <div className="flex items-center">
-              <AlertCircle className="w-6 h-6 text-red-600 mr-3" />
               <div className="flex-1">
                 <p className="text-red-700 font-medium">Error</p>
                 <p className="text-red-600 text-sm mt-1">{error}</p>
@@ -557,7 +444,7 @@ const BookmarkManager: React.FC = () => {
                 onClick={handleRefresh}
                 className="ml-4 inline-flex items-center px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
               >
-                <RotateCcw className="w-3 h-3 mr-1" />
+                <RefreshCw className="w-3 h-3 mr-1" />
                 Try Again
               </button>
             </div>

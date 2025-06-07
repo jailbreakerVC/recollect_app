@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { DatabaseBookmark } from '../lib/supabase';
+import { DatabaseBookmark, SyncResult, ExtensionStatus } from '../types';
 import { BookmarkService } from '../services/bookmarkService';
-import { ExtensionService } from '../services/extensionService';
-import { SyncService, SyncResult } from '../services/syncService';
+import { extensionService } from '../services/extensionService';
+import { SyncService } from '../services/syncService';
+import { Logger } from '../utils/logger';
 
 interface UseSupabaseBookmarksReturn {
   bookmarks: DatabaseBookmark[];
   loading: boolean;
   error: string | null;
   extensionAvailable: boolean;
+  extensionStatus: ExtensionStatus;
   syncWithExtension: (onProgress?: (status: string) => void) => Promise<SyncResult>;
   addBookmark: (title: string, url: string, folder?: string) => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
@@ -25,10 +27,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extensionAvailable, setExtensionAvailable] = useState(false);
+  const [extensionStatus, setExtensionStatus] = useState<ExtensionStatus>('checking');
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
 
-  // Load bookmarks from database
   const loadBookmarks = useCallback(async () => {
     if (!user) return;
 
@@ -38,10 +40,11 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     try {
       const data = await BookmarkService.getBookmarks(user.id);
       setBookmarks(data);
+      Logger.info('useSupabaseBookmarks', `Loaded ${data.length} bookmarks`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load bookmarks';
       setError(message);
-      console.error('Failed to load bookmarks:', err);
+      Logger.error('useSupabaseBookmarks', 'Failed to load bookmarks', err);
     } finally {
       setLoading(false);
     }
@@ -49,7 +52,11 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
   // Set up extension availability detection
   useEffect(() => {
-    const cleanup = ExtensionService.setupAvailabilityDetection(setExtensionAvailable);
+    const cleanup = extensionService.setupAvailabilityDetection((available) => {
+      setExtensionAvailable(available);
+      setExtensionStatus(available ? 'available' : 'unavailable');
+    });
+    
     return cleanup;
   }, []);
 
@@ -57,12 +64,12 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   useEffect(() => {
     if (!extensionAvailable) return;
 
-    const cleanup = ExtensionService.setupEventListeners((event) => {
+    const cleanup = extensionService.setupEventListeners((event) => {
+      Logger.info('useSupabaseBookmarks', `Extension event received: ${event}`);
+      
       if (event === 'syncRequested') {
-        // Handle sync request from extension
         handleExtensionSyncRequest();
       } else {
-        // Refresh bookmarks for other events
         loadBookmarks();
       }
     });
@@ -70,7 +77,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     return cleanup;
   }, [extensionAvailable, loadBookmarks]);
 
-  // Handle sync request from extension
   const handleExtensionSyncRequest = useCallback(async () => {
     if (!user) return;
 
@@ -84,13 +90,13 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       setLastSyncResult(result);
       
       if (result.hasChanges) {
-        await loadBookmarks(); // Refresh if there were changes
+        await loadBookmarks();
         setSyncStatus(`Synced: +${result.inserted} -${result.removed} ~${result.updated}`);
       } else {
         setSyncStatus('Already up to date');
       }
       
-      // Notify extension that sync is complete
+      // Notify extension of completion
       if ((window as any).notifyExtensionSyncComplete) {
         (window as any).notifyExtensionSyncComplete({
           success: true,
@@ -103,7 +109,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       setError(message);
       setSyncStatus('Sync failed');
       
-      // Notify extension of failure
       if ((window as any).notifyExtensionSyncComplete) {
         (window as any).notifyExtensionSyncComplete({
           success: false,
@@ -111,7 +116,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         });
       }
     } finally {
-      // Clear sync status after 3 seconds
       setTimeout(() => setSyncStatus(null), 3000);
     }
   }, [user, loadBookmarks]);
@@ -128,7 +132,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     }
   }, [loadBookmarks, user]);
 
-  // Sync with Chrome extension
   const syncWithExtension = useCallback(async (onProgress?: (status: string) => void): Promise<SyncResult> => {
     if (!user || !extensionAvailable) {
       throw new Error('Extension not available or user not logged in');
@@ -148,7 +151,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       setLastSyncResult(result);
       
       if (result.hasChanges) {
-        await loadBookmarks(); // Refresh if there were changes
+        await loadBookmarks();
         const statusMessage = `Synced: +${result.inserted} -${result.removed} ~${result.updated}`;
         setSyncStatus(statusMessage);
         onProgress?.(statusMessage);
@@ -164,16 +167,14 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       setError(message);
       setSyncStatus('Sync failed');
       onProgress?.('Sync failed');
-      console.error('Sync failed:', err);
+      Logger.error('useSupabaseBookmarks', 'Sync failed', err);
       throw err;
     } finally {
       setLoading(false);
-      // Clear sync status after 3 seconds
       setTimeout(() => setSyncStatus(null), 3000);
     }
   }, [user, extensionAvailable, loadBookmarks]);
 
-  // Add bookmark
   const addBookmark = useCallback(async (title: string, url: string, folder?: string) => {
     if (!user) return;
 
@@ -182,7 +183,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
     try {
       await SyncService.addBookmarkEverywhere(user.id, title, url, folder);
-      await loadBookmarks(); // Refresh after add
+      await loadBookmarks();
+      Logger.info('useSupabaseBookmarks', 'Bookmark added successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to add bookmark';
       setError(message);
@@ -192,11 +194,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     }
   }, [user, loadBookmarks]);
 
-  // Remove bookmark
   const removeBookmark = useCallback(async (id: string) => {
     if (!user) return;
 
-    // Find the bookmark to get Chrome ID
     const bookmark = bookmarks.find(b => b.id === id);
     if (!bookmark) {
       throw new Error('Bookmark not found');
@@ -207,7 +207,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
     try {
       await SyncService.removeBookmarkEverywhere(id, user.id, bookmark.chrome_bookmark_id);
-      await loadBookmarks(); // Refresh after remove
+      await loadBookmarks();
+      Logger.info('useSupabaseBookmarks', 'Bookmark removed successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove bookmark';
       setError(message);
@@ -217,7 +218,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     }
   }, [user, bookmarks, loadBookmarks]);
 
-  // Update bookmark
   const updateBookmark = useCallback(async (id: string, updates: Partial<DatabaseBookmark>) => {
     if (!user) return;
 
@@ -226,7 +226,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
     try {
       await BookmarkService.updateBookmark(id, user.id, updates);
-      await loadBookmarks(); // Refresh after update
+      await loadBookmarks();
+      Logger.info('useSupabaseBookmarks', 'Bookmark updated successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update bookmark';
       setError(message);
@@ -236,7 +237,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     }
   }, [user, loadBookmarks]);
 
-  // Manual refresh
   const refreshBookmarks = useCallback(async () => {
     setError(null);
     await loadBookmarks();
@@ -247,6 +247,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     loading,
     error,
     extensionAvailable,
+    extensionStatus,
     syncWithExtension,
     addBookmark,
     removeBookmark,
