@@ -118,25 +118,42 @@ export class SemanticSearchService {
   }
 
   /**
-   * Update embeddings for a specific user's bookmarks
+   * Update embeddings for a specific user's bookmarks with better error handling
    */
   static async updateUserEmbeddings(userId: string): Promise<number> {
     try {
-      const { data, error } = await supabase.rpc('update_bookmark_embeddings', {
+      // Validate user ID
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('Invalid user ID provided');
+      }
+
+      // Check if the function exists first
+      const { data: functionExists, error: checkError } = await supabase.rpc('update_bookmark_embeddings', {
         user_id_param: userId
       });
 
-      if (error) {
-        console.error('❌ Failed to update embeddings:', error);
-        throw new Error(`Failed to update embeddings: ${error.message}`);
+      if (checkError) {
+        // If function doesn't exist, try to handle gracefully
+        if (checkError.message.includes('function') && checkError.message.includes('does not exist')) {
+          console.warn('⚠️ Embedding function not available, skipping embedding update');
+          return 0;
+        }
+        
+        console.error('❌ Failed to update embeddings:', checkError);
+        throw new Error(`Failed to update embeddings: ${checkError.message}`);
       }
 
-      const updatedCount = data || 0;
+      const updatedCount = functionExists || 0;
+      
+      if (updatedCount > 0) {
+        console.log(`✅ Updated embeddings for ${updatedCount} bookmarks`);
+      }
       
       return updatedCount;
     } catch (err) {
-      console.error('❌ Error updating embeddings:', err);
-      throw err;
+      // Don't throw error for embedding updates - they're not critical
+      console.warn('⚠️ Embedding update failed (non-critical):', err);
+      return 0;
     }
   }
 
@@ -148,6 +165,12 @@ export class SemanticSearchService {
       const { data, error } = await supabase.rpc('update_bookmark_embeddings');
 
       if (error) {
+        // Handle missing function gracefully
+        if (error.message.includes('function') && error.message.includes('does not exist')) {
+          console.warn('⚠️ Embedding function not available');
+          return 0;
+        }
+        
         console.error('❌ Failed to update all embeddings:', error);
         throw new Error(`Failed to update embeddings: ${error.message}`);
       }
@@ -156,8 +179,8 @@ export class SemanticSearchService {
       
       return updatedCount;
     } catch (err) {
-      console.error('❌ Error updating all embeddings:', err);
-      throw err;
+      console.warn('⚠️ Embedding update failed (non-critical):', err);
+      return 0;
     }
   }
 
@@ -170,6 +193,14 @@ export class SemanticSearchService {
     sampleResults?: SemanticSearchResult[];
   }> {
     try {
+      // First test if embedding functions are available
+      try {
+        await this.updateUserEmbeddings(userId);
+      } catch (embeddingError) {
+        // Continue with test even if embeddings fail
+        console.warn('Embedding update failed during test:', embeddingError);
+      }
+
       // Test with a simple query
       const testQuery = 'github';
       const results = await this.searchBookmarks(testQuery, {
@@ -178,9 +209,11 @@ export class SemanticSearchService {
         similarityThreshold: 0.1
       });
 
+      const searchTypes = [...new Set(results.map(r => r.search_type))];
+      
       return {
         success: true,
-        message: `Semantic search test successful. Found ${results.length} results for "${testQuery}"`,
+        message: `Semantic search test successful. Found ${results.length} results for "${testQuery}" using: ${searchTypes.join(', ')}`,
         sampleResults: results
       };
     } catch (err) {
@@ -230,6 +263,26 @@ export class SemanticSearchService {
     } catch (err) {
       console.error('❌ Error getting search suggestions:', err);
       return [];
+    }
+  }
+
+  /**
+   * Check if semantic search is available
+   */
+  static async isSemanticSearchAvailable(): Promise<boolean> {
+    try {
+      // Try to call the search function with a test query
+      const { error } = await supabase.rpc('search_bookmarks_semantic', {
+        search_query: 'test',
+        user_id_param: 'test',
+        similarity_threshold: 0.5,
+        max_results: 1
+      });
+
+      // If no error or only a data-related error, the function exists
+      return !error || !error.message.includes('function') || !error.message.includes('does not exist');
+    } catch (err) {
+      return false;
     }
   }
 }

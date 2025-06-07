@@ -38,6 +38,7 @@ const BookmarkManager: React.FC = () => {
   const [extensionStatus, setExtensionStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
   const [semanticSearchResults, setSemanticSearchResults] = useState<SemanticSearchResult[]>([]);
   const [useSemanticResults, setUseSemanticResults] = useState(false);
+  const [semanticSearchAvailable, setSemanticSearchAvailable] = useState(false);
 
   // Initialize extension service
   useEffect(() => {
@@ -106,6 +107,23 @@ const BookmarkManager: React.FC = () => {
     testConnection();
   }, []);
 
+  // Check semantic search availability
+  useEffect(() => {
+    const checkSemanticSearch = async () => {
+      try {
+        const available = await SemanticSearchService.isSemanticSearchAvailable();
+        setSemanticSearchAvailable(available);
+      } catch (error) {
+        console.error('Failed to check semantic search availability:', error);
+        setSemanticSearchAvailable(false);
+      }
+    };
+
+    if (connectionStatus === 'connected') {
+      checkSemanticSearch();
+    }
+  }, [connectionStatus]);
+
   // Debug user context in development
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && user) {
@@ -123,14 +141,14 @@ const BookmarkManager: React.FC = () => {
     }
   }, [user]);
 
-  // Update embeddings when bookmarks change
+  // Update embeddings when bookmarks change (non-blocking)
   useEffect(() => {
-    if (user && bookmarks.length > 0) {
+    if (user && bookmarks.length > 0 && semanticSearchAvailable) {
       const updateEmbeddings = async () => {
         try {
           await SemanticSearchService.updateUserEmbeddings(user.id);
         } catch (error) {
-          // Silent fail for embeddings
+          // Silent fail for embeddings - they're not critical
         }
       };
 
@@ -138,7 +156,7 @@ const BookmarkManager: React.FC = () => {
       const timeoutId = setTimeout(updateEmbeddings, 2000);
       return () => clearTimeout(timeoutId);
     }
-  }, [user, bookmarks.length]);
+  }, [user, bookmarks.length, semanticSearchAvailable]);
 
   const filteredBookmarks = useSemanticResults && semanticSearchResults.length > 0
     ? semanticSearchResults.map(result => {
@@ -284,8 +302,8 @@ const BookmarkManager: React.FC = () => {
           `Successfully synced ${result.total} bookmarks. Changes: ${changes.join(', ')}`
         );
 
-        // Update embeddings for new bookmarks
-        if (result.inserted > 0) {
+        // Update embeddings for new bookmarks (non-blocking)
+        if (result.inserted > 0 && semanticSearchAvailable) {
           try {
             await SemanticSearchService.updateUserEmbeddings(user!.id);
           } catch (embError) {
@@ -435,13 +453,16 @@ const BookmarkManager: React.FC = () => {
       
       if (result.success) {
         showSuccess('Semantic Search Test', result.message);
+        setSemanticSearchAvailable(true);
       } else {
         showError('Semantic Search Test Failed', result.message);
+        setSemanticSearchAvailable(false);
       }
     } catch (err) {
       removeToast(loadingToastId);
       const message = err instanceof Error ? err.message : 'Semantic search test failed';
       showError('Semantic Search Test Error', message);
+      setSemanticSearchAvailable(false);
     }
   };
 
@@ -491,11 +512,13 @@ const BookmarkManager: React.FC = () => {
                        extensionStatus === 'available' ? 'Connected' : 'Not Available'}
                     </span>
                   </div>
-                  <div className="flex items-center">
-                    <Sparkles className="w-4 h-4 mr-1" />
-                    <span>AI Search</span>
-                    <div className="w-2 h-2 rounded-full ml-2 bg-purple-500" />
-                  </div>
+                  {semanticSearchAvailable && (
+                    <div className="flex items-center">
+                      <Sparkles className="w-4 h-4 mr-1" />
+                      <span>AI Search</span>
+                      <div className="w-2 h-2 rounded-full ml-2 bg-purple-500" />
+                    </div>
+                  )}
                   {syncStatus && (
                     <div className="flex items-center text-blue-600">
                       <Clock className="w-4 h-4 mr-1" />
@@ -519,14 +542,16 @@ const BookmarkManager: React.FC = () => {
                     <TestTube className="w-4 h-4 mr-2" />
                     Test DB
                   </button>
-                  <button
-                    onClick={handleTestSemanticSearch}
-                    className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
-                    title="Test semantic search"
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Test AI
-                  </button>
+                  {semanticSearchAvailable && (
+                    <button
+                      onClick={handleTestSemanticSearch}
+                      className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                      title="Test semantic search"
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Test AI
+                    </button>
+                  )}
                   <button
                     onClick={handleDebugSync}
                     className="inline-flex items-center px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
@@ -647,7 +672,7 @@ const BookmarkManager: React.FC = () => {
           folderNames={getFolderNames()}
           onAddBookmark={handleAddBookmark}
           loading={loading}
-          onSemanticSearchResult={handleSemanticSearchResult}
+          onSemanticSearchResult={semanticSearchAvailable ? handleSemanticSearchResult : undefined}
         />
 
         <BookmarkGrid
