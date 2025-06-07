@@ -288,13 +288,23 @@ const BookmarkManager: React.FC = () => {
 
   // Debug sync button for development
   const handleDebugSync = async () => {
-    if (!user || !extensionAvailable) {
-      showError('Debug Sync Failed', 'User not logged in or extension not available');
+    console.log('🐛 DEBUG SYNC: Starting detailed sync analysis...');
+    console.log('🐛 User:', user);
+    console.log('🐛 Extension available:', extensionAvailable);
+    
+    // Check prerequisites
+    if (!user) {
+      console.error('🐛 DEBUG SYNC: User not logged in');
+      showError('Debug Sync Failed', 'User not logged in');
+      return;
+    }
+    
+    if (!extensionAvailable) {
+      console.error('🐛 DEBUG SYNC: Extension not available');
+      showError('Debug Sync Failed', 'Chrome extension not available');
       return;
     }
 
-    console.log('🐛 DEBUG SYNC: Starting detailed sync analysis...');
-    
     const loadingToastId = showLoading('Debug Sync', 'Analyzing sync data...');
     
     try {
