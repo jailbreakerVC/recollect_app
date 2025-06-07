@@ -5,6 +5,10 @@ import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { ExtensionService } from '../services/extensionService';
 import { BookmarkService } from '../services/bookmarkService';
 import { ToastContainer, useToast } from './Toast';
+import { BookmarkGrid } from './BookmarkGrid';
+import { BookmarkControls } from './BookmarkControls';
+import { StatusCards } from './StatusCards';
+import { DebugPanel } from './DebugPanel';
 
 const BookmarkManager: React.FC = () => {
   const { user } = useAuth();
@@ -31,16 +35,13 @@ const BookmarkManager: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
 
-  // Initialize extension service and clean up on unmount
+  // Initialize extension service
   useEffect(() => {
     console.log('📱 BookmarkManager: Setting up extension service');
-    
-    // Extension service is auto-initialized, but we can ensure it's ready
     ExtensionService.initialize();
     
     return () => {
       console.log('📱 BookmarkManager: Component unmounting');
-      // Don't cleanup the service here as other components might be using it
     };
   }, []);
 
@@ -93,16 +94,6 @@ const BookmarkManager: React.FC = () => {
           return new Date(b.date_added).getTime() - new Date(a.date_added).getTime();
       }
     });
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
 
   const getFolderNames = () => {
     const folderNames = Array.from(new Set(bookmarks.map(b => b.folder).filter(Boolean)));
@@ -260,7 +251,6 @@ const BookmarkManager: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-      {/* Toast Container */}
       <ToastContainer toasts={toasts} onClose={removeToast} />
 
       {/* Header */}
@@ -342,139 +332,24 @@ const BookmarkManager: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {/* Database Status */}
-          <div className={`rounded-lg p-6 ${
-            connectionStatus === 'connected' ? 'bg-blue-50 border border-blue-200' :
-            connectionStatus === 'disconnected' ? 'bg-red-50 border border-red-200' :
-            'bg-yellow-50 border border-yellow-200'
-          }`}>
-            <div className="flex items-start">
-              <div className="flex items-center">
-                <Database className={`w-6 h-6 mt-0.5 mr-3 flex-shrink-0 ${
-                  connectionStatus === 'connected' ? 'text-blue-600' :
-                  connectionStatus === 'disconnected' ? 'text-red-600' : 'text-yellow-600'
-                }`} />
-                {connectionStatus === 'connected' && <Wifi className="w-4 h-4 text-green-500" />}
-              </div>
-              <div>
-                <h3 className={`text-lg font-semibold mb-2 ${
-                  connectionStatus === 'connected' ? 'text-blue-800' :
-                  connectionStatus === 'disconnected' ? 'text-red-800' : 'text-yellow-800'
-                }`}>
-                  Database {connectionStatus === 'connected' ? 'Connected' : 
-                           connectionStatus === 'disconnected' ? 'Disconnected' : 'Checking...'}
-                </h3>
-                <p className={
-                  connectionStatus === 'connected' ? 'text-blue-700' :
-                  connectionStatus === 'disconnected' ? 'text-red-700' : 'text-yellow-700'
-                }>
-                  {connectionStatus === 'connected' 
-                    ? 'Your bookmarks are stored securely in Supabase. Use the refresh button to reload data or sync with Chrome extension.'
-                    : connectionStatus === 'disconnected'
-                    ? 'Unable to connect to the database. Please check your Supabase configuration.'
-                    : 'Testing database connection...'
-                  }
-                </p>
-              </div>
-            </div>
-          </div>
+        <StatusCards 
+          connectionStatus={connectionStatus}
+          extensionAvailable={extensionAvailable}
+          lastSyncResult={lastSyncResult}
+        />
 
-          {/* Extension Status */}
-          <div className={`rounded-lg p-6 ${extensionAvailable ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
-            <div className="flex items-start">
-              <Chrome className={`w-6 h-6 mt-0.5 mr-3 flex-shrink-0 ${extensionAvailable ? 'text-green-600' : 'text-amber-600'}`} />
-              <div>
-                <h3 className={`text-lg font-semibold mb-2 ${extensionAvailable ? 'text-green-800' : 'text-amber-800'}`}>
-                  {extensionAvailable ? 'Chrome Extension Active' : 'Chrome Extension Optional'}
-                </h3>
-                <p className={extensionAvailable ? 'text-green-700' : 'text-amber-700'}>
-                  {extensionAvailable 
-                    ? 'Chrome extension is connected. Use the sync button to import your Chrome bookmarks.'
-                    : 'Install the Chrome extension to sync your browser bookmarks with the database.'
-                  }
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Sync Status */}
-          {lastSyncResult && (
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
-              <div className="flex items-start">
-                <TrendingUp className="w-6 h-6 mt-0.5 mr-3 flex-shrink-0 text-purple-600" />
-                <div>
-                  <h3 className="text-lg font-semibold mb-2 text-purple-800">
-                    Last Sync Results
-                  </h3>
-                  <div className="text-purple-700 space-y-1">
-                    <div className="flex justify-between">
-                      <span>Added:</span>
-                      <span className="font-medium">{lastSyncResult.inserted}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Updated:</span>
-                      <span className="font-medium">{lastSyncResult.updated}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Removed:</span>
-                      <span className="font-medium">{lastSyncResult.removed}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-purple-200 pt-1">
-                      <span>Total:</span>
-                      <span className="font-medium">{lastSyncResult.total}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Debug Information */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mb-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold text-gray-900">Debug Information</h4>
-              <div className="flex space-x-2">
-                <button
-                  onClick={handleTestConnection}
-                  className="inline-flex items-center px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors"
-                >
-                  <TestTube className="w-3 h-3 mr-1" />
-                  Test Connection
-                </button>
-                <button
-                  onClick={handleDebugRefresh}
-                  className="inline-flex items-center px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors"
-                >
-                  <Bug className="w-3 h-3 mr-1" />
-                  Refresh Debug
-                </button>
-              </div>
-            </div>
-            <div className="text-sm text-gray-600 space-y-1">
-              <div>Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? '✅ Set' : '❌ Missing'}</div>
-              <div>Supabase Key: {import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing'}</div>
-              <div>User ID: {user?.id || 'Not logged in'}</div>
-              <div>Extension Available: {extensionAvailable ? 'Yes' : 'No'}</div>
-              <div>Extension Flag: {(window as any).bookmarkExtensionAvailable ? 'Set' : 'Not Set'}</div>
-              <div>Extension Service: {ExtensionService ? 'Loaded' : 'Not Loaded'}</div>
-              <div>Bookmarks Count: {bookmarks.length}</div>
-              <div>Loading: {loading ? 'Yes' : 'No'}</div>
-              <div>Error: {error || 'None'}</div>
-              <div>Sync Status: {syncStatus || 'None'}</div>
-              <div>Connection Status: {connectionStatus}</div>
-              {debugInfo && (
-                <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-                  <div className="font-medium mb-1">User Context Debug:</div>
-                  <pre className="whitespace-pre-wrap">{JSON.stringify(debugInfo, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <DebugPanel 
+          user={user}
+          extensionAvailable={extensionAvailable}
+          bookmarks={bookmarks}
+          loading={loading}
+          error={error}
+          syncStatus={syncStatus}
+          connectionStatus={connectionStatus}
+          debugInfo={debugInfo}
+          onTestConnection={handleTestConnection}
+          onDebugRefresh={handleDebugRefresh}
+        />
 
         {error && (
           <div className="mb-8 bg-red-50 border border-red-200 rounded-lg p-6">
@@ -498,202 +373,29 @@ const BookmarkManager: React.FC = () => {
           </div>
         )}
 
-        {/* Controls */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search bookmarks..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+        <BookmarkControls
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          selectedFolder={selectedFolder}
+          setSelectedFolder={setSelectedFolder}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          showAddForm={showAddForm}
+          setShowAddForm={setShowAddForm}
+          newBookmark={newBookmark}
+          setNewBookmark={setNewBookmark}
+          folderNames={getFolderNames()}
+          onAddBookmark={handleAddBookmark}
+          loading={loading}
+        />
 
-            {/* Folder Filter */}
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <select
-                value={selectedFolder}
-                onChange={(e) => setSelectedFolder(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
-              >
-                <option value="all">All Folders</option>
-                {getFolderNames().map(folder => (
-                  <option key={folder} value={folder}>{folder}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Sort */}
-            <div>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'date' | 'title' | 'folder')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="date">Sort by Date Added</option>
-                <option value="title">Sort by Title</option>
-                <option value="folder">Sort by Folder</option>
-              </select>
-            </div>
-
-            {/* Add Bookmark */}
-            <div>
-              <button
-                onClick={() => setShowAddForm(!showAddForm)}
-                className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Add Bookmark
-              </button>
-            </div>
-          </div>
-
-          {/* Add Bookmark Form */}
-          {showAddForm && (
-            <form onSubmit={handleAddBookmark} className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                  <input
-                    type="text"
-                    value={newBookmark.title}
-                    onChange={(e) => setNewBookmark(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Bookmark title"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">URL</label>
-                  <input
-                    type="url"
-                    value={newBookmark.url}
-                    onChange={(e) => setNewBookmark(prev => ({ ...prev, url: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="https://example.com"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Folder (Optional)</label>
-                  <input
-                    type="text"
-                    value={newBookmark.folder}
-                    onChange={(e) => setNewBookmark(prev => ({ ...prev, folder: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Folder name"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex space-x-3">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  Add Bookmark
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-
-        {/* Bookmarks Grid */}
-        {filteredBookmarks.length === 0 ? (
-          <div className="text-center py-12">
-            <Bookmark className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No bookmarks found</h3>
-            <p className="text-gray-500 mb-4">
-              {searchTerm || selectedFolder !== 'all' 
-                ? 'Try adjusting your search or filter criteria'
-                : 'Add your first bookmark or sync with Chrome extension'
-              }
-            </p>
-            {extensionAvailable && (
-              <button
-                onClick={handleSyncWithExtension}
-                disabled={loading}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                Sync Chrome Bookmarks
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredBookmarks.map((bookmark) => (
-              <div
-                key={bookmark.id}
-                className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 hover:transform hover:-translate-y-1"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center flex-1 min-w-0">
-                    <div className="flex items-center mr-3">
-                      <Bookmark className="w-6 h-6 text-blue-600" />
-                      {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
-                      )}
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 truncate">
-                      {bookmark.title}
-                    </h3>
-                  </div>
-                  <div className="flex items-center space-x-2 ml-2">
-                    <a
-                      href={bookmark.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      <ExternalLink className="w-5 h-5" />
-                    </a>
-                    <button
-                      onClick={() => handleRemoveBookmark(bookmark.id)}
-                      className="text-red-600 hover:text-red-800 transition-colors"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-600 break-all">{bookmark.url}</p>
-                  </div>
-
-                  <div className="flex items-center justify-between text-sm text-gray-500">
-                    <div className="flex items-center">
-                      <Calendar className="w-4 h-4 mr-1" />
-                      <span>{formatDate(bookmark.date_added)}</span>
-                    </div>
-                    
-                    {bookmark.folder && (
-                      <div className="flex items-center">
-                        <Folder className="w-4 h-4 mr-1" />
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                          {bookmark.folder}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <BookmarkGrid
+          bookmarks={filteredBookmarks}
+          onRemoveBookmark={handleRemoveBookmark}
+          extensionAvailable={extensionAvailable}
+          onSyncWithExtension={handleSyncWithExtension}
+          loading={loading}
+        />
       </div>
     </div>
   );

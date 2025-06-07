@@ -22,6 +22,7 @@ export class ExtensionService {
   private static requestId = 0;
   private static messageHandlers = new Map<string, (event: MessageEvent) => void>();
   private static isInitialized = false;
+  private static globalMessageHandler: ((event: MessageEvent) => void) | null = null;
 
   /**
    * Initialize the extension service
@@ -32,7 +33,8 @@ export class ExtensionService {
     console.log('🚀 Initializing ExtensionService');
     
     // Set up global message listener
-    window.addEventListener('message', this.handleGlobalMessage.bind(this));
+    this.globalMessageHandler = this.handleGlobalMessage.bind(this);
+    window.addEventListener('message', this.globalMessageHandler);
     
     // Set up extension availability flag
     this.setupExtensionFlag();
@@ -49,7 +51,11 @@ export class ExtensionService {
     
     console.log('🧹 Cleaning up ExtensionService');
     
-    window.removeEventListener('message', this.handleGlobalMessage.bind(this));
+    if (this.globalMessageHandler) {
+      window.removeEventListener('message', this.globalMessageHandler);
+      this.globalMessageHandler = null;
+    }
+    
     this.messageHandlers.clear();
     
     // Clean up global functions
@@ -265,8 +271,8 @@ export class ExtensionService {
   static setupAvailabilityDetection(onAvailabilityChange: (available: boolean) => void): () => void {
     console.log('🔍 Setting up extension availability detection');
     
-    const handlerId = `availability_${Date.now()}`;
     let lastAvailability = false;
+    let intervalId: NodeJS.Timeout;
     
     const checkAvailability = () => {
       const available = this.isExtensionAvailable();
@@ -295,7 +301,7 @@ export class ExtensionService {
     window.addEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
 
     // Check periodically
-    const intervalId = setInterval(checkAvailability, 3000);
+    intervalId = setInterval(checkAvailability, 3000);
 
     // Return cleanup function
     return () => {
