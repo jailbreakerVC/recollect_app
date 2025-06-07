@@ -1,5 +1,7 @@
 // Chrome Extension Popup Script
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('🚀 Popup script loaded');
+  
   const statusEl = document.getElementById('status');
   const statsEl = document.getElementById('stats');
   const bookmarkCountEl = document.getElementById('bookmarkCount');
@@ -13,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Update status display
   function updateStatus(connected, message) {
+    console.log('📊 Updating status:', { connected, message });
     isConnected = connected;
     statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
     statusEl.innerHTML = message;
@@ -49,15 +52,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastSync = new Date(result.lastSyncTime);
         lastSyncEl.textContent = lastSync.toLocaleTimeString();
       }
-      
-      if (result.lastBookmarkCount !== undefined) {
-        // Don't overwrite current count, just use for comparison
-      }
     });
   }
   
   // Check if web app is open and responsive
   function checkWebAppConnection() {
+    console.log('🔍 Checking web app connection...');
+    
     const webAppUrls = [
       'http://localhost:*/*',
       'https://localhost:*/*',
@@ -67,9 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     chrome.tabs.query({ url: webAppUrls }, (tabs) => {
       if (chrome.runtime.lastError) {
+        console.error('❌ Tab query error:', chrome.runtime.lastError);
         updateStatus(false, '❌ Connection Error');
         return;
       }
+      
+      console.log('📋 Found tabs:', tabs?.length || 0);
       
       if (tabs && tabs.length > 0) {
         // Test if web app is actually responsive
@@ -80,33 +84,50 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
-  // Test if web app can receive messages
+  // Test if web app can receive and respond to messages
   function testWebAppResponsiveness(tab) {
-    const testMessage = {
-      action: 'notifyWebApp',
-      event: 'connectionTest',
-      data: { timestamp: Date.now() }
-    };
+    console.log('🧪 Testing web app responsiveness on tab:', tab.id);
     
-    chrome.tabs.sendMessage(tab.id, testMessage, (response) => {
+    // Send connection test message to content script
+    chrome.tabs.sendMessage(tab.id, {
+      action: 'testConnection'
+    }, (response) => {
       if (chrome.runtime.lastError) {
-        updateStatus(false, '⚠️ Web App Not Responsive');
+        console.error('❌ Content script not responding:', chrome.runtime.lastError);
+        updateStatus(false, '⚠️ Extension Not Loaded');
+        return;
+      }
+      
+      console.log('📨 Content script response:', response);
+      
+      if (response && response.success) {
+        if (response.responsive) {
+          console.log('✅ Web app is responsive');
+          updateStatus(true, '✅ Connected to Web App');
+          getBookmarkCount();
+        } else {
+          console.log('⚠️ Web app not responsive');
+          updateStatus(false, '⚠️ Web App Not Responsive');
+        }
       } else {
-        updateStatus(true, '✅ Connected to Web App');
-        getBookmarkCount();
+        console.log('❌ Invalid response from content script');
+        updateStatus(false, '⚠️ Communication Error');
       }
     });
   }
   
   // Get bookmark count from Chrome
   function getBookmarkCount() {
+    console.log('📊 Getting bookmark count...');
+    
     chrome.bookmarks.getTree((bookmarkTree) => {
       if (chrome.runtime.lastError) {
-        console.error('Failed to get bookmarks:', chrome.runtime.lastError);
+        console.error('❌ Failed to get bookmarks:', chrome.runtime.lastError);
         return;
       }
       
       const count = countBookmarks(bookmarkTree);
+      console.log('📚 Bookmark count:', count);
       updateBookmarkCount(count);
     });
   }
@@ -162,6 +183,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Open web app
   openWebAppBtn.addEventListener('click', () => {
+    console.log('🌐 Opening web app...');
+    
     // Try localhost first, then production URLs
     const urls = [
       'http://localhost:5173',
@@ -171,10 +194,11 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
     
     // Open the first URL (localhost development)
-    chrome.tabs.create({ url: urls[0] }, () => {
+    chrome.tabs.create({ url: urls[0] }, (tab) => {
       if (chrome.runtime.lastError) {
-        console.error('Failed to open tab:', chrome.runtime.lastError);
+        console.error('❌ Failed to open tab:', chrome.runtime.lastError);
       } else {
+        console.log('✅ Web app opened in new tab:', tab.id);
         window.close();
       }
     });
@@ -182,7 +206,12 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Sync bookmarks with smart detection
   syncBookmarksBtn.addEventListener('click', async () => {
-    if (isSyncing) return;
+    if (isSyncing) {
+      console.log('⏭️ Sync already in progress, skipping');
+      return;
+    }
+    
+    console.log('🔄 Starting sync process...');
     
     isSyncing = true;
     syncBookmarksBtn.disabled = true;
@@ -191,8 +220,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       // First check if sync is needed
       const syncCheck = await checkIfSyncNeeded();
+      console.log('🔍 Sync check result:', syncCheck);
       
       if (!syncCheck.needsSync) {
+        console.log('✅ No sync needed');
         updateStatus(true, '✅ Already Up to Date');
         syncBookmarksBtn.innerHTML = '✅ Up to Date';
         
@@ -212,11 +243,12 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       
       syncBookmarksBtn.innerHTML = `🔄 ${reasonText[syncCheck.reason]}...`;
+      console.log('🔄 Sync reason:', reasonText[syncCheck.reason]);
       
       // Get current bookmarks
       chrome.bookmarks.getTree((bookmarkTree) => {
         if (chrome.runtime.lastError) {
-          console.error('Failed to get bookmarks:', chrome.runtime.lastError);
+          console.error('❌ Failed to get bookmarks:', chrome.runtime.lastError);
           updateStatus(false, '❌ Sync Failed');
           resetSyncButton();
           return;
@@ -224,6 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const count = countBookmarks(bookmarkTree);
         updateBookmarkCount(count);
+        console.log('📚 Current bookmark count:', count);
         
         // Notify web app to perform sync
         chrome.tabs.query({ 
@@ -235,12 +268,15 @@ document.addEventListener('DOMContentLoaded', () => {
           ] 
         }, (tabs) => {
           if (tabs && tabs.length > 0) {
+            console.log('📤 Sending sync request to web app...');
+            
             let syncCompleted = false;
             let responseTimeout;
             
             // Set up response listener
             const responseListener = (message, sender, sendResponse) => {
               if (message.action === 'syncComplete') {
+                console.log('✅ Sync completion notification received:', message.data);
                 syncCompleted = true;
                 clearTimeout(responseTimeout);
                 chrome.runtime.onMessage.removeListener(responseListener);
@@ -267,9 +303,11 @@ document.addEventListener('DOMContentLoaded', () => {
                   reason: syncCheck.reason,
                   timestamp: Date.now()
                 }
-              }, () => {
+              }, (response) => {
                 if (chrome.runtime.lastError) {
-                  console.log('Tab not ready for messages:', chrome.runtime.lastError.message);
+                  console.log('⚠️ Tab not ready for messages:', chrome.runtime.lastError.message);
+                } else {
+                  console.log('📨 Sync request sent to tab:', tab.id);
                 }
               });
             }
@@ -277,6 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Timeout if no response in 10 seconds
             responseTimeout = setTimeout(() => {
               if (!syncCompleted) {
+                console.log('⏰ Sync timeout - no response from web app');
                 chrome.runtime.onMessage.removeListener(responseListener);
                 updateStatus(true, '⚠️ Sync may be incomplete');
                 resetSyncButton();
@@ -284,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 10000);
             
           } else {
+            console.log('❌ No web app tabs found');
             updateStatus(false, '⚠️ Web App Not Open');
             resetSyncButton();
           }
@@ -291,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
     } catch (error) {
-      console.error('Sync error:', error);
+      console.error('❌ Sync error:', error);
       updateStatus(false, '❌ Sync Failed');
       resetSyncButton();
     }
@@ -305,6 +345,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Listen for messages from web app
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('📨 Popup received message:', message);
+    
     if (message.action === 'syncStarted') {
       syncBookmarksBtn.innerHTML = '🔄 Syncing...';
     } else if (message.action === 'syncProgress') {
@@ -313,10 +355,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   // Initial setup
+  console.log('🚀 Initializing popup...');
   loadSyncInfo();
-  checkWebAppConnection();
   getBookmarkCount();
   
-  // Refresh connection status every 3 seconds
+  // Check connection immediately and then every 3 seconds
+  checkWebAppConnection();
   setInterval(checkWebAppConnection, 3000);
+  
+  console.log('✅ Popup initialized successfully');
 });

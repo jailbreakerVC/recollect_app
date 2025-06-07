@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bookmark Manager Extension",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Access and sync your Chrome bookmarks with the Bookmark Manager web app",
   "permissions": [
     "bookmarks",
@@ -27,7 +27,8 @@
         "https://*.vercel.app/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": false
     }
   ],
   "action": {

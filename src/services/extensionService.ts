@@ -29,11 +29,14 @@ export class ExtensionService {
 
       const requestId = `req_${++this.requestId}_${Date.now()}`;
       
+      console.log('📤 Sending message to extension:', { requestId, payload });
+      
       const handleResponse = (event: MessageEvent) => {
         if (
           event.data.source === 'bookmark-manager-extension' &&
           event.data.requestId === requestId
         ) {
+          console.log('📨 Extension response received:', event.data);
           window.removeEventListener('message', handleResponse);
           
           if (event.data.response.success) {
@@ -95,11 +98,16 @@ export class ExtensionService {
    * Set up extension event listeners
    */
   static setupEventListeners(onBookmarkChange: (event?: string) => void): () => void {
+    console.log('👂 Setting up extension event listeners');
+    
     const handleMessage = (event: MessageEvent) => {
       if (event.data.source === 'bookmark-manager-extension') {
+        console.log('📨 Extension event received:', event.data);
+        
         const { event: eventType } = event.data;
         
         if (['bookmarkCreated', 'bookmarkRemoved', 'bookmarkChanged', 'syncRequested'].includes(eventType)) {
+          console.log('🔄 Triggering bookmark change handler for:', eventType);
           onBookmarkChange(eventType);
         }
       }
@@ -109,6 +117,7 @@ export class ExtensionService {
     
     // Return cleanup function
     return () => {
+      console.log('🧹 Cleaning up extension event listeners');
       window.removeEventListener('message', handleMessage);
     };
   }
@@ -117,11 +126,16 @@ export class ExtensionService {
    * Set up extension availability detection
    */
   static setupAvailabilityDetection(onAvailabilityChange: (available: boolean) => void): () => void {
+    console.log('🔍 Setting up extension availability detection');
+    
     const checkAvailability = () => {
-      onAvailabilityChange(this.isExtensionAvailable());
+      const available = this.isExtensionAvailable();
+      console.log('📱 Extension availability check:', available);
+      onAvailabilityChange(available);
     };
 
-    const handleExtensionReady = () => {
+    const handleExtensionReady = (event: CustomEvent) => {
+      console.log('✅ Extension ready event received:', event.detail);
       onAvailabilityChange(true);
     };
 
@@ -129,11 +143,16 @@ export class ExtensionService {
     checkAvailability();
 
     // Listen for extension ready event
-    window.addEventListener('bookmarkExtensionReady', handleExtensionReady);
+    window.addEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
+
+    // Also check periodically in case we missed the initial event
+    const intervalId = setInterval(checkAvailability, 1000);
 
     // Return cleanup function
     return () => {
-      window.removeEventListener('bookmarkExtensionReady', handleExtensionReady);
+      console.log('🧹 Cleaning up extension availability detection');
+      window.removeEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
+      clearInterval(intervalId);
     };
   }
 }
