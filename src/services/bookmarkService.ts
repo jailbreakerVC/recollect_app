@@ -387,4 +387,50 @@ export class BookmarkService {
       return [];
     }
   }
+
+  /**
+   * Test extension connection through service
+   */
+  static async testExtensionConnection(): Promise<{ success: boolean; message: string; bookmarkCount?: number }> {
+    try {
+      console.log('🧪 Testing extension connection...');
+      
+      // Import here to avoid circular dependency
+      const { ExtensionService } = await import('./extensionService');
+      
+      if (!ExtensionService.isExtensionAvailable()) {
+        return {
+          success: false,
+          message: 'Chrome extension not available'
+        };
+      }
+      
+      const testResult = await ExtensionService.testConnection();
+      
+      if (testResult.success) {
+        // Try to get bookmark count
+        try {
+          const bookmarks = await ExtensionService.getBookmarks();
+          return {
+            success: true,
+            message: testResult.message,
+            bookmarkCount: bookmarks.length
+          };
+        } catch (error) {
+          return {
+            success: false,
+            message: `Extension available but bookmark fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+          };
+        }
+      } else {
+        return testResult;
+      }
+      
+    } catch (err) {
+      return {
+        success: false,
+        message: `Extension test failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+      };
+    }
+  }
 }

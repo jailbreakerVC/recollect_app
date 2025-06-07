@@ -155,9 +155,9 @@ export class ExtensionService {
   }
 
   /**
-   * Send message to Chrome extension with timeout and retry
+   * Send message to Chrome extension with improved timeout and retry logic
    */
-  private static sendMessage(payload: any, timeout = 5000): Promise<any> {
+  private static sendMessage(payload: any, timeout = 10000): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.isExtensionAvailable()) {
         reject(new Error('Chrome extension not available'));
@@ -169,12 +169,14 @@ export class ExtensionService {
       console.log('📤 Sending message to extension:', { requestId, payload });
       
       let responseReceived = false;
+      let timeoutId: NodeJS.Timeout;
       
       const handleResponse = (event: MessageEvent) => {
         if (event.data.source === 'bookmark-manager-extension' &&
             event.data.requestId === requestId) {
           
           responseReceived = true;
+          clearTimeout(timeoutId);
           this.removeMessageHandler(`response_${requestId}`);
           
           console.log('📨 Extension response received:', event.data);
@@ -191,50 +193,106 @@ export class ExtensionService {
       this.addMessageHandler(`response_${requestId}`, handleResponse);
 
       // Send message
-      window.postMessage({
-        source: 'bookmark-manager-webapp',
-        requestId,
-        payload
-      }, window.location.origin);
+      try {
+        window.postMessage({
+          source: 'bookmark-manager-webapp',
+          requestId,
+          payload
+        }, window.location.origin);
+        
+        console.log('📤 Message posted to window');
+      } catch (error) {
+        this.removeMessageHandler(`response_${requestId}`);
+        reject(new Error(`Failed to send message: ${error}`));
+        return;
+      }
 
-      // Timeout handling
-      setTimeout(() => {
+      // Timeout handling with longer timeout for bookmark operations
+      timeoutId = setTimeout(() => {
         if (!responseReceived) {
           this.removeMessageHandler(`response_${requestId}`);
-          reject(new Error('Extension request timeout'));
+          console.error('⏰ Extension request timeout for:', payload.action);
+          reject(new Error(`Extension request timeout (${timeout}ms) for action: ${payload.action}`));
         }
       }, timeout);
     });
   }
 
   /**
-   * Get all bookmarks from Chrome extension
+   * Get all bookmarks from Chrome extension with retry logic
    */
   static async getBookmarks(): Promise<ExtensionBookmark[]> {
-    const response = await this.sendMessage({ action: 'getBookmarks' });
-    return response.bookmarks || [];
+    console.log('📚 Requesting bookmarks from Chrome extension...');
+    
+    try {
+      const response = await this.sendMessage({ action: 'getBookmarks' }, 15000); // 15 second timeout
+      const bookmarks = response.bookmarks || [];
+      
+      console.log(`✅ Received ${bookmarks.length} bookmarks from extension`);
+      
+      // Validate bookmark structure
+      const validBookmarks = bookmarks.filter((bookmark: any) => {
+        const isValid = bookmark && 
+                       typeof bookmark.id === 'string' && 
+                       typeof bookmark.title === 'string' && 
+                       typeof bookmark.url === 'string';
+        
+        if (!isValid) {
+          console.warn('⚠️ Invalid bookmark structure:', bookmark);
+        }
+        
+        return isValid;
+      });
+      
+      if (validBookmarks.length !== bookmarks.length) {
+        console.warn(`⚠️ Filtered out ${bookmarks.length - validBookmarks.length} invalid bookmarks`);
+      }
+      
+      return validBookmarks;
+    } catch (error) {
+      console.error('❌ Failed to get bookmarks from extension:', error);
+      throw new Error(`Failed to get Chrome bookmarks: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
    * Add bookmark to Chrome
    */
   static async addBookmark(title: string, url: string, parentId?: string): Promise<void> {
-    await this.sendMessage({
-      action: 'addBookmark',
-      title,
-      url,
-      parentId
-    });
+    console.log('➕ Adding bookmark to Chrome:', { title, url, parentId });
+    
+    try {
+      await this.sendMessage({
+        action: 'addBookmark',
+        title,
+        url,
+        parentId
+      }, 10000);
+      
+      console.log('✅ Bookmark added to Chrome successfully');
+    } catch (error) {
+      console.error('❌ Failed to add bookmark to Chrome:', error);
+      throw error;
+    }
   }
 
   /**
    * Remove bookmark from Chrome
    */
   static async removeBookmark(chromeBookmarkId: string): Promise<void> {
-    await this.sendMessage({
-      action: 'removeBookmark',
-      id: chromeBookmarkId
-    });
+    console.log('🗑️ Removing bookmark from Chrome:', chromeBookmarkId);
+    
+    try {
+      await this.sendMessage({
+        action: 'removeBookmark',
+        id: chromeBookmarkId
+      }, 10000);
+      
+      console.log('✅ Bookmark removed from Chrome successfully');
+    } catch (error) {
+      console.error('❌ Failed to remove bookmark from Chrome:', error);
+      throw error;
+    }
   }
 
   /**
@@ -309,6 +367,36 @@ export class ExtensionService {
       window.removeEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
       clearInterval(intervalId);
     };
+  }
+
+  /**
+   * Test extension connection
+   */
+  static async testConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log('🧪 Testing extension connection...');
+      
+      if (!this.isExtensionAvailable()) {
+        return {
+          success: false,
+          message: 'Extension not available - flag not set'
+        };
+      }
+      
+      // Try to get a small number of bookmarks as a connection test
+      const bookmarks = await this.getBookmarks();
+      
+      return {
+        success: true,
+        message: `Extension connected successfully. Found ${bookmarks.length} bookmarks.`
+      };
+      
+    } catch (error) {
+      return {
+        success: false,
+        message: `Extension connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
   }
 }
 

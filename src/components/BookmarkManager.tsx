@@ -174,7 +174,7 @@ const BookmarkManager: React.FC = () => {
       } catch (extError) {
         console.error('❌ Extension connection failed:', extError);
         removeToast(loadingToastId);
-        showError('Extension Error', 'Failed to connect to Chrome extension');
+        showError('Extension Error', `Failed to connect to Chrome extension: ${extError instanceof Error ? extError.message : 'Unknown error'}`);
         return;
       }
 
@@ -194,7 +194,7 @@ const BookmarkManager: React.FC = () => {
       } catch (dbError) {
         console.error('❌ Database connection failed:', dbError);
         removeToast(loadingToastId);
-        showError('Database Error', 'Failed to connect to database');
+        showError('Database Error', `Failed to connect to database: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`);
         return;
       }
 
@@ -288,16 +288,34 @@ const BookmarkManager: React.FC = () => {
 
   // Debug sync button for development
   const handleDebugSync = async () => {
-    if (!user || !extensionAvailable) return;
+    if (!user || !extensionAvailable) {
+      showError('Debug Sync Failed', 'User not logged in or extension not available');
+      return;
+    }
 
     console.log('🐛 DEBUG SYNC: Starting detailed sync analysis...');
     
+    const loadingToastId = showLoading('Debug Sync', 'Analyzing sync data...');
+    
     try {
+      // Test extension connection first
+      console.log('🐛 Testing extension connection...');
+      const extTest = await BookmarkService.testExtensionConnection();
+      console.log('🐛 Extension test result:', extTest);
+      
+      if (!extTest.success) {
+        removeToast(loadingToastId);
+        showError('Extension Test Failed', extTest.message);
+        return;
+      }
+      
       // Get extension bookmarks
+      console.log('🐛 Getting extension bookmarks...');
       const extensionBookmarks = await ExtensionService.getBookmarks();
       console.log('🐛 Extension bookmarks:', extensionBookmarks);
       
       // Get database bookmarks
+      console.log('🐛 Getting database bookmarks...');
       const databaseBookmarks = await BookmarkService.getBookmarks(user.id);
       console.log('🐛 Database bookmarks:', databaseBookmarks);
       
@@ -312,20 +330,25 @@ const BookmarkManager: React.FC = () => {
       const newInExtension = extensionBookmarks.filter(b => !dbChromeIds.has(b.id));
       const removedFromExtension = databaseBookmarks.filter(b => b.chrome_bookmark_id && !extIds.has(b.chrome_bookmark_id));
       
-      console.log('🐛 Analysis:', {
+      const analysis = {
         extensionCount: extensionBookmarks.length,
         databaseCount: databaseBookmarks.length,
         totalDatabaseCount: totalCount,
         newInExtension: newInExtension.length,
         removedFromExtension: removedFromExtension.length,
         newBookmarks: newInExtension.slice(0, 3),
-        removedBookmarks: removedFromExtension.slice(0, 3)
-      });
+        removedBookmarks: removedFromExtension.slice(0, 3),
+        extensionTest: extTest
+      };
       
-      showSuccess('Debug Analysis Complete', 'Check console for detailed sync analysis');
+      console.log('🐛 Analysis:', analysis);
+      
+      removeToast(loadingToastId);
+      showSuccess('Debug Analysis Complete', `Extension: ${analysis.extensionCount} bookmarks, Database: ${analysis.databaseCount} bookmarks, New: ${analysis.newInExtension}, Removed: ${analysis.removedFromExtension}. Check console for details.`);
       
     } catch (err) {
       console.error('🐛 Debug sync failed:', err);
+      removeToast(loadingToastId);
       showError('Debug Sync Failed', err instanceof Error ? err.message : 'Unknown error');
     }
   };
