@@ -33,69 +33,147 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
 
+  console.log('🔄 useSupabaseBookmarks hook initialized:', {
+    user: user ? { id: user.id, name: user.name } : null,
+    bookmarksCount: bookmarks.length,
+    loading: loading,
+    error: error,
+    extensionAvailable: extensionAvailable,
+    connectionStatus: connectionStatus
+  });
+
   // Check if extension is available
   useEffect(() => {
+    console.log('🔍 Checking Chrome extension availability...');
+    
     const checkExtension = () => {
-      setExtensionAvailable(!!(window as any).bookmarkExtensionAvailable);
+      const available = !!(window as any).bookmarkExtensionAvailable;
+      console.log('📱 Extension availability check:', {
+        available: available,
+        windowProperty: (window as any).bookmarkExtensionAvailable,
+        timestamp: new Date().toISOString()
+      });
+      setExtensionAvailable(available);
     };
 
     checkExtension();
 
     const handleExtensionReady = () => {
+      console.log('✅ Chrome extension ready event received');
       setExtensionAvailable(true);
     };
 
     window.addEventListener('bookmarkExtensionReady', handleExtensionReady);
-    return () => window.removeEventListener('bookmarkExtensionReady', handleExtensionReady);
+    return () => {
+      console.log('🧹 Cleaning up extension event listener');
+      window.removeEventListener('bookmarkExtensionReady', handleExtensionReady);
+    };
   }, []);
 
   // Set auth context when user changes
   useEffect(() => {
     if (user?.id) {
-      console.log('Setting auth context for user:', user.id);
-      setAuthContext(user.id);
+      console.log('👤 User changed, setting auth context:', {
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email
+      });
+      
+      setAuthContext(user.id).then(({ data, error }) => {
+        if (error) {
+          console.error('❌ Failed to set auth context:', error);
+        } else {
+          console.log('✅ Auth context set for user:', user.id);
+        }
+      });
+    } else {
+      console.log('👤 No user, skipping auth context setup');
     }
   }, [user?.id]);
 
   // Load bookmarks from Supabase
   const loadBookmarks = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('👤 No user, skipping bookmark load');
+      return;
+    }
 
+    console.log('📚 Starting bookmark load for user:', user.id);
     setLoading(true);
     setError(null);
 
     try {
-      console.log('Loading bookmarks for user:', user.id);
+      console.log('🔑 Setting auth context before query...');
+      const authResult = await setAuthContext(user.id);
       
-      // Set user context before querying
-      await setAuthContext(user.id);
+      if (authResult.error) {
+        console.warn('⚠️ Auth context setup had issues, continuing anyway:', authResult.error);
+      }
       
-      const { data, error: supabaseError } = await supabase
+      console.log('📊 Executing Supabase query:', {
+        table: 'bookmarks',
+        filter: `user_id = ${user.id}`,
+        orderBy: 'date_added DESC'
+      });
+      
+      const queryStart = performance.now();
+      const { data, error: supabaseError, count } = await supabase
         .from('bookmarks')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('user_id', user.id)
         .order('date_added', { ascending: false });
+      
+      const queryEnd = performance.now();
+      
+      console.log('📊 Supabase query completed:', {
+        duration: `${(queryEnd - queryStart).toFixed(2)}ms`,
+        success: !supabaseError,
+        dataLength: data?.length || 0,
+        count: count,
+        error: supabaseError
+      });
 
       if (supabaseError) {
-        console.error('Supabase query error:', supabaseError);
+        console.error('❌ Supabase query error:', {
+          error: supabaseError,
+          message: supabaseError.message,
+          details: supabaseError.details,
+          hint: supabaseError.hint,
+          code: supabaseError.code,
+          userId: user.id
+        });
         throw supabaseError;
       }
       
-      console.log(`Loaded ${data?.length || 0} bookmarks`);
+      console.log('✅ Bookmarks loaded successfully:', {
+        count: data?.length || 0,
+        bookmarks: data?.map(b => ({ id: b.id, title: b.title, url: b.url })) || [],
+        timestamp: new Date().toISOString()
+      });
+      
       setBookmarks(data || []);
     } catch (err) {
-      console.error('Error loading bookmarks:', err);
+      console.error('❌ Error in loadBookmarks:', {
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined,
+        userId: user.id
+      });
+      
       setError(err instanceof Error ? err.message : 'Failed to load bookmarks');
     } finally {
       setLoading(false);
+      console.log('📚 Bookmark load completed');
     }
   }, [user]);
 
   // Load bookmarks when user changes
   useEffect(() => {
     if (user) {
+      console.log('👤 User available, triggering bookmark load');
       loadBookmarks();
     } else {
+      console.log('👤 No user, clearing bookmarks');
       setBookmarks([]);
     }
   }, [loadBookmarks, user]);
@@ -105,7 +183,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     if (!user) {
       // Clean up existing channel if user logs out
       if (realtimeChannel) {
-        console.log('Cleaning up existing channel - user logged out');
+        console.log('🧹 Cleaning up existing channel - user logged out');
         supabase.removeChannel(realtimeChannel);
         setRealtimeChannel(null);
         setConnectionStatus('disconnected');
@@ -113,11 +191,16 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       return;
     }
 
-    console.log('Setting up Supabase real-time subscription for user:', user.id);
+    console.log('🔄 Setting up Supabase real-time subscription:', {
+      userId: user.id,
+      timestamp: new Date().toISOString()
+    });
+    
     setConnectionStatus('connecting');
 
     // Create a unique channel name to avoid conflicts
     const channelName = `bookmarks_${user.id}_${Date.now()}`;
+    console.log('📡 Creating channel:', channelName);
     
     const channel = supabase.channel(channelName, {
       config: {
@@ -125,6 +208,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         presence: { key: user.id }
       }
     });
+
+    console.log('📡 Channel created, setting up postgres changes listener...');
 
     // Set up postgres changes listener
     channel
@@ -137,17 +222,37 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log('Real-time bookmark change detected:', payload);
+          console.log('🔄 Real-time bookmark change detected:', {
+            eventType: payload.eventType,
+            table: payload.table,
+            schema: payload.schema,
+            new: payload.new,
+            old: payload.old,
+            timestamp: new Date().toISOString()
+          });
+          
           // Reload bookmarks when changes occur
+          console.log('🔄 Triggering bookmark reload due to real-time change');
           loadBookmarks();
         }
       )
       .subscribe((status, err) => {
-        console.log('Subscription status changed:', status);
+        console.log('📡 Subscription status changed:', {
+          status: status,
+          error: err,
+          channelName: channelName,
+          timestamp: new Date().toISOString()
+        });
+        
         setConnectionStatus(status);
         
         if (err) {
-          console.error('Subscription error:', err);
+          console.error('❌ Subscription error:', {
+            error: err,
+            message: err.message,
+            stack: err.stack,
+            channelName: channelName
+          });
           setError(`Real-time connection error: ${err.message}`);
         }
         
@@ -177,7 +282,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
     // Cleanup function
     return () => {
-      console.log('Cleaning up real-time subscription');
+      console.log('🧹 Cleaning up real-time subscription:', channelName);
       if (channel) {
         supabase.removeChannel(channel);
       }
@@ -188,39 +293,67 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
   // Listen for extension bookmark changes
   useEffect(() => {
+    console.log('👂 Setting up extension message listener');
+    
     const handleMessage = (event: MessageEvent) => {
       if (event.data.source === 'bookmark-manager-extension') {
+        console.log('📨 Extension message received:', {
+          event: event.data.event,
+          data: event.data.data,
+          timestamp: new Date().toISOString()
+        });
+        
         if (event.data.event === 'bookmarkCreated' || 
             event.data.event === 'bookmarkRemoved' || 
             event.data.event === 'bookmarkChanged') {
-          console.log('Extension bookmark change detected:', event.data.event);
+          console.log('🔄 Extension bookmark change detected, triggering sync');
           syncWithExtension();
         }
       }
     };
 
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    return () => {
+      console.log('🧹 Cleaning up extension message listener');
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   const sendMessageToExtension = useCallback((payload: any): Promise<any> => {
+    console.log('📤 Sending message to extension:', {
+      payload: payload,
+      extensionAvailable: extensionAvailable,
+      timestamp: new Date().toISOString()
+    });
+    
     return new Promise((resolve, reject) => {
       if (!extensionAvailable) {
+        console.error('❌ Extension not available for message');
         reject(new Error('Extension not available'));
         return;
       }
 
       const requestId = Math.random().toString(36).substr(2, 9);
+      console.log('📤 Generated request ID:', requestId);
       
       const handleResponse = (event: MessageEvent) => {
         if (
           event.data.source === 'bookmark-manager-extension' &&
           event.data.requestId === requestId
         ) {
+          console.log('📨 Extension response received:', {
+            requestId: requestId,
+            response: event.data.response,
+            timestamp: new Date().toISOString()
+          });
+          
           window.removeEventListener('message', handleResponse);
+          
           if (event.data.response.success) {
+            console.log('✅ Extension request successful');
             resolve(event.data.response);
           } else {
+            console.error('❌ Extension request failed:', event.data.response);
             reject(new Error(event.data.response.error || 'Extension request failed'));
           }
         }
@@ -228,6 +361,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
       window.addEventListener('message', handleResponse);
 
+      console.log('📤 Posting message to window');
       window.postMessage({
         source: 'bookmark-manager-webapp',
         requestId,
@@ -235,6 +369,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       }, window.location.origin);
 
       setTimeout(() => {
+        console.error('⏰ Extension request timeout for ID:', requestId);
         window.removeEventListener('message', handleResponse);
         reject(new Error('Extension request timeout'));
       }, 5000);
@@ -242,28 +377,46 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   }, [extensionAvailable]);
 
   const syncWithExtension = useCallback(async () => {
-    if (!extensionAvailable || !user) return;
+    if (!extensionAvailable || !user) {
+      console.log('⏭️ Skipping extension sync:', {
+        extensionAvailable: extensionAvailable,
+        user: !!user
+      });
+      return;
+    }
 
+    console.log('🔄 Starting sync with Chrome extension...');
     setLoading(true);
     setError(null);
 
     try {
-      console.log('Starting sync with Chrome extension...');
-      
-      // Set user context before operations
+      console.log('🔑 Setting auth context before sync...');
       await setAuthContext(user.id);
       
-      // Get bookmarks from Chrome extension
+      console.log('📤 Requesting bookmarks from Chrome extension...');
       const response = await sendMessageToExtension({ action: 'getBookmarks' });
       const extensionBookmarks: ExtensionBookmark[] = response.bookmarks || [];
       
-      console.log(`Found ${extensionBookmarks.length} bookmarks in Chrome`);
+      console.log('📚 Chrome bookmarks received:', {
+        count: extensionBookmarks.length,
+        bookmarks: extensionBookmarks.map(b => ({ id: b.id, title: b.title, url: b.url }))
+      });
 
-      // Get existing bookmarks from database
-      const { data: existingBookmarks } = await supabase
+      console.log('📊 Fetching existing bookmarks from database...');
+      const { data: existingBookmarks, error: fetchError } = await supabase
         .from('bookmarks')
         .select('*')
         .eq('user_id', user.id);
+
+      if (fetchError) {
+        console.error('❌ Error fetching existing bookmarks:', fetchError);
+        throw fetchError;
+      }
+
+      console.log('📊 Existing bookmarks in database:', {
+        count: existingBookmarks?.length || 0,
+        bookmarks: existingBookmarks?.map(b => ({ id: b.id, chrome_id: b.chrome_bookmark_id, title: b.title })) || []
+      });
 
       const existingMap = new Map(
         (existingBookmarks || []).map(b => [b.chrome_bookmark_id, b])
@@ -273,6 +426,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       const bookmarksToInsert: Partial<DatabaseBookmark>[] = [];
       const bookmarksToUpdate: { id: string; updates: Partial<DatabaseBookmark> }[] = [];
 
+      console.log('🔍 Analyzing bookmark differences...');
+      
       for (const extBookmark of extensionBookmarks) {
         const existing = existingMap.get(extBookmark.id);
         
@@ -293,6 +448,16 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
             existing.url !== extBookmark.url ||
             existing.folder !== extBookmark.folder
           ) {
+            console.log('📝 Bookmark needs update:', {
+              id: existing.id,
+              chrome_id: extBookmark.id,
+              changes: {
+                title: existing.title !== extBookmark.title ? { old: existing.title, new: extBookmark.title } : null,
+                url: existing.url !== extBookmark.url ? { old: existing.url, new: extBookmark.url } : null,
+                folder: existing.folder !== extBookmark.folder ? { old: existing.folder, new: extBookmark.folder } : null
+              }
+            });
+            
             bookmarksToUpdate.push({
               id: existing.id,
               updates: {
@@ -304,33 +469,59 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
             });
           }
         } else {
-          // New bookmark
+          console.log('➕ New bookmark to insert:', {
+            chrome_id: extBookmark.id,
+            title: extBookmark.title,
+            url: extBookmark.url
+          });
           bookmarksToInsert.push(bookmarkData);
         }
       }
 
       // Insert new bookmarks
       if (bookmarksToInsert.length > 0) {
-        console.log(`Inserting ${bookmarksToInsert.length} new bookmarks`);
-        const { error: insertError } = await supabase
+        console.log(`➕ Inserting ${bookmarksToInsert.length} new bookmarks...`);
+        
+        const { data: insertedData, error: insertError } = await supabase
           .from('bookmarks')
-          .insert(bookmarksToInsert);
+          .insert(bookmarksToInsert)
+          .select();
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error('❌ Insert error:', {
+            error: insertError,
+            bookmarksToInsert: bookmarksToInsert
+          });
+          throw insertError;
+        }
+        
+        console.log('✅ Bookmarks inserted successfully:', {
+          count: insertedData?.length || 0,
+          inserted: insertedData?.map(b => ({ id: b.id, title: b.title })) || []
+        });
       }
 
       // Update existing bookmarks
       for (const { id, updates } of bookmarksToUpdate) {
+        console.log(`📝 Updating bookmark ${id}:`, updates);
+        
         const { error: updateError } = await supabase
           .from('bookmarks')
           .update(updates)
           .eq('id', id);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('❌ Update error:', {
+            error: updateError,
+            bookmarkId: id,
+            updates: updates
+          });
+          throw updateError;
+        }
       }
 
       if (bookmarksToUpdate.length > 0) {
-        console.log(`Updated ${bookmarksToUpdate.length} existing bookmarks`);
+        console.log(`✅ Updated ${bookmarksToUpdate.length} existing bookmarks`);
       }
 
       // Remove bookmarks that no longer exist in Chrome
@@ -340,129 +531,228 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         .map(b => b.id);
 
       if (bookmarksToDelete.length > 0) {
-        console.log(`Deleting ${bookmarksToDelete.length} bookmarks that no longer exist in Chrome`);
+        console.log(`🗑️ Deleting ${bookmarksToDelete.length} bookmarks that no longer exist in Chrome:`, bookmarksToDelete);
+        
         const { error: deleteError } = await supabase
           .from('bookmarks')
           .delete()
           .in('id', bookmarksToDelete);
 
-        if (deleteError) throw deleteError;
+        if (deleteError) {
+          console.error('❌ Delete error:', {
+            error: deleteError,
+            bookmarksToDelete: bookmarksToDelete
+          });
+          throw deleteError;
+        }
+        
+        console.log('✅ Bookmarks deleted successfully');
       }
 
       // Reload bookmarks
+      console.log('🔄 Reloading bookmarks after sync...');
       await loadBookmarks();
-      console.log('Sync completed successfully');
+      console.log('✅ Sync completed successfully');
       
     } catch (err) {
-      console.error('Sync error:', err);
+      console.error('❌ Sync error:', {
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined
+      });
       setError(err instanceof Error ? err.message : 'Failed to sync bookmarks');
     } finally {
       setLoading(false);
+      console.log('🔄 Sync process completed');
     }
   }, [extensionAvailable, user, sendMessageToExtension, loadBookmarks]);
 
   const addBookmark = useCallback(async (title: string, url: string, folder?: string) => {
-    if (!user) return;
+    if (!user) {
+      console.error('❌ Cannot add bookmark: no user');
+      return;
+    }
+
+    console.log('➕ Adding bookmark:', {
+      title: title,
+      url: url,
+      folder: folder,
+      userId: user.id
+    });
 
     try {
-      console.log('Adding bookmark:', { title, url, folder });
-      
-      // Set user context before operations
+      console.log('🔑 Setting auth context before add...');
       await setAuthContext(user.id);
       
-      const { error } = await supabase
+      const bookmarkData = {
+        user_id: user.id,
+        title,
+        url,
+        folder,
+        date_added: new Date().toISOString(),
+      };
+      
+      console.log('📊 Inserting bookmark into database:', bookmarkData);
+      
+      const { data, error } = await supabase
         .from('bookmarks')
-        .insert({
-          user_id: user.id,
-          title,
-          url,
-          folder,
-          date_added: new Date().toISOString(),
-        });
+        .insert(bookmarkData)
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Database insert error:', {
+          error: error,
+          bookmarkData: bookmarkData
+        });
+        throw error;
+      }
+      
+      console.log('✅ Bookmark added to database:', data);
 
       // Also add to Chrome if extension is available
       if (extensionAvailable) {
         try {
+          console.log('📤 Adding bookmark to Chrome extension...');
           await sendMessageToExtension({
             action: 'addBookmark',
             title,
             url,
           });
-          console.log('Bookmark also added to Chrome');
+          console.log('✅ Bookmark also added to Chrome');
         } catch (extError) {
-          console.warn('Failed to add bookmark to Chrome:', extError);
+          console.warn('⚠️ Failed to add bookmark to Chrome:', extError);
         }
       }
     } catch (err) {
-      console.error('Add bookmark error:', err);
+      console.error('❌ Add bookmark error:', {
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined,
+        title: title,
+        url: url,
+        folder: folder
+      });
       throw new Error(err instanceof Error ? err.message : 'Failed to add bookmark');
     }
   }, [user, extensionAvailable, sendMessageToExtension]);
 
   const removeBookmark = useCallback(async (id: string) => {
-    if (!user) return;
+    if (!user) {
+      console.error('❌ Cannot remove bookmark: no user');
+      return;
+    }
+
+    console.log('🗑️ Removing bookmark:', {
+      bookmarkId: id,
+      userId: user.id
+    });
 
     try {
-      console.log('Removing bookmark:', id);
-      
-      // Set user context before operations
+      console.log('🔑 Setting auth context before remove...');
       await setAuthContext(user.id);
       
-      // Get bookmark details first
-      const { data: bookmark } = await supabase
+      console.log('📊 Fetching bookmark details before removal...');
+      const { data: bookmark, error: fetchError } = await supabase
         .from('bookmarks')
         .select('chrome_bookmark_id')
         .eq('id', id)
         .eq('user_id', user.id)
         .single();
 
-      // Remove from database
+      if (fetchError) {
+        console.error('❌ Error fetching bookmark for removal:', fetchError);
+        throw fetchError;
+      }
+      
+      console.log('📊 Bookmark details:', bookmark);
+
+      console.log('🗑️ Removing bookmark from database...');
       const { error } = await supabase
         .from('bookmarks')
         .delete()
         .eq('id', id)
         .eq('user_id', user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Database delete error:', {
+          error: error,
+          bookmarkId: id,
+          userId: user.id
+        });
+        throw error;
+      }
+      
+      console.log('✅ Bookmark removed from database');
 
       // Also remove from Chrome if extension is available and bookmark has chrome_bookmark_id
       if (extensionAvailable && bookmark?.chrome_bookmark_id) {
         try {
+          console.log('📤 Removing bookmark from Chrome extension:', bookmark.chrome_bookmark_id);
           await sendMessageToExtension({
             action: 'removeBookmark',
             id: bookmark.chrome_bookmark_id,
           });
-          console.log('Bookmark also removed from Chrome');
+          console.log('✅ Bookmark also removed from Chrome');
         } catch (extError) {
-          console.warn('Failed to remove bookmark from Chrome:', extError);
+          console.warn('⚠️ Failed to remove bookmark from Chrome:', extError);
         }
       }
     } catch (err) {
-      console.error('Remove bookmark error:', err);
+      console.error('❌ Remove bookmark error:', {
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined,
+        bookmarkId: id
+      });
       throw new Error(err instanceof Error ? err.message : 'Failed to remove bookmark');
     }
   }, [user, extensionAvailable, sendMessageToExtension]);
 
   const updateBookmark = useCallback(async (id: string, updates: Partial<DatabaseBookmark>) => {
-    if (!user) return;
+    if (!user) {
+      console.error('❌ Cannot update bookmark: no user');
+      return;
+    }
+
+    console.log('📝 Updating bookmark:', {
+      bookmarkId: id,
+      updates: updates,
+      userId: user.id
+    });
 
     try {
-      console.log('Updating bookmark:', id, updates);
-      
-      // Set user context before operations
+      console.log('🔑 Setting auth context before update...');
       await setAuthContext(user.id);
       
-      const { error } = await supabase
+      console.log('📊 Executing update query...');
+      const { data, error } = await supabase
         .from('bookmarks')
         .update(updates)
         .eq('id', id)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Database update error:', {
+          error: error,
+          bookmarkId: id,
+          updates: updates,
+          userId: user.id
+        });
+        throw error;
+      }
+      
+      console.log('✅ Bookmark updated successfully:', data);
     } catch (err) {
-      console.error('Update bookmark error:', err);
+      console.error('❌ Update bookmark error:', {
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined,
+        bookmarkId: id,
+        updates: updates
+      });
       throw new Error(err instanceof Error ? err.message : 'Failed to update bookmark');
     }
   }, [user]);
@@ -470,10 +760,20 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   // Auto-sync when extension becomes available
   useEffect(() => {
     if (extensionAvailable && user) {
-      console.log('Extension became available, starting auto-sync');
+      console.log('🔄 Extension became available, starting auto-sync');
       syncWithExtension();
     }
   }, [extensionAvailable, user, syncWithExtension]);
+
+  console.log('📊 useSupabaseBookmarks hook state:', {
+    bookmarksCount: bookmarks.length,
+    loading: loading,
+    error: error,
+    extensionAvailable: extensionAvailable,
+    connectionStatus: connectionStatus,
+    user: user ? { id: user.id, name: user.name } : null,
+    timestamp: new Date().toISOString()
+  });
 
   return {
     bookmarks,
