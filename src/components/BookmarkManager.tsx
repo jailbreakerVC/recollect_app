@@ -38,14 +38,14 @@ const BookmarkManager: React.FC = () => {
   const [extensionStatus, setExtensionStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
   const [semanticSearchResults, setSemanticSearchResults] = useState<SemanticSearchResult[]>([]);
   const [useSemanticResults, setUseSemanticResults] = useState(false);
-  const [semanticSearchAvailable, setSemanticSearchAvailable] = useState(false);
 
   // Initialize extension service
   useEffect(() => {
+    console.log('📱 BookmarkManager: Setting up extension service');
     ExtensionService.initialize();
     
     return () => {
-      // Cleanup handled by service
+      console.log('📱 BookmarkManager: Component unmounting');
     };
   }, []);
 
@@ -54,6 +54,7 @@ const BookmarkManager: React.FC = () => {
     let mounted = true;
     
     const checkExtensionStatus = async () => {
+      console.log('🔍 Checking extension status...');
       setExtensionStatus('checking');
       
       try {
@@ -62,6 +63,7 @@ const BookmarkManager: React.FC = () => {
         
         if (mounted) {
           setExtensionStatus(available ? 'available' : 'unavailable');
+          console.log('📱 Extension status updated:', available ? 'available' : 'unavailable');
         }
       } catch (error) {
         console.error('❌ Extension status check failed:', error);
@@ -79,6 +81,7 @@ const BookmarkManager: React.FC = () => {
 
     // Listen for extension ready events
     const handleExtensionReady = () => {
+      console.log('✅ Extension ready event received');
       if (mounted) {
         setExtensionStatus('available');
       }
@@ -107,23 +110,6 @@ const BookmarkManager: React.FC = () => {
     testConnection();
   }, []);
 
-  // Check semantic search availability
-  useEffect(() => {
-    const checkSemanticSearch = async () => {
-      try {
-        const available = await SemanticSearchService.isSemanticSearchAvailable();
-        setSemanticSearchAvailable(available);
-      } catch (error) {
-        console.error('Failed to check semantic search availability:', error);
-        setSemanticSearchAvailable(false);
-      }
-    };
-
-    if (connectionStatus === 'connected') {
-      checkSemanticSearch();
-    }
-  }, [connectionStatus]);
-
   // Debug user context in development
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && user) {
@@ -141,14 +127,15 @@ const BookmarkManager: React.FC = () => {
     }
   }, [user]);
 
-  // Update embeddings when bookmarks change (non-blocking)
+  // Update embeddings when bookmarks change
   useEffect(() => {
-    if (user && bookmarks.length > 0 && semanticSearchAvailable) {
+    if (user && bookmarks.length > 0) {
       const updateEmbeddings = async () => {
         try {
           await SemanticSearchService.updateUserEmbeddings(user.id);
+          console.log('✅ Embeddings updated for user bookmarks');
         } catch (error) {
-          // Silent fail for embeddings - they're not critical
+          console.warn('⚠️ Failed to update embeddings:', error);
         }
       };
 
@@ -156,7 +143,7 @@ const BookmarkManager: React.FC = () => {
       const timeoutId = setTimeout(updateEmbeddings, 2000);
       return () => clearTimeout(timeoutId);
     }
-  }, [user, bookmarks.length, semanticSearchAvailable]);
+  }, [user, bookmarks.length]);
 
   const filteredBookmarks = useSemanticResults && semanticSearchResults.length > 0
     ? semanticSearchResults.map(result => {
@@ -239,6 +226,11 @@ const BookmarkManager: React.FC = () => {
   };
 
   const handleSyncWithExtension = async () => {
+    console.log('🔄 Starting manual sync process...');
+    console.log('User ID:', user?.id);
+    console.log('Extension available:', extensionAvailable);
+    console.log('Extension status:', extensionStatus);
+
     if (extensionStatus !== 'available') {
       showError('Extension Not Available', 'Chrome extension is not installed or not responding. Please install the extension and refresh the page.');
       return;
@@ -248,6 +240,7 @@ const BookmarkManager: React.FC = () => {
 
     try {
       // Test extension connection first
+      console.log('🧪 Testing extension connection...');
       updateToast(loadingToastId, { 
         title: 'Syncing Bookmarks', 
         message: 'Testing extension connection...' 
@@ -256,6 +249,8 @@ const BookmarkManager: React.FC = () => {
       let extensionBookmarks;
       try {
         extensionBookmarks = await ExtensionService.getBookmarks();
+        console.log('✅ Extension connection successful, got', extensionBookmarks.length, 'bookmarks');
+        console.log('Sample extension bookmarks:', extensionBookmarks.slice(0, 3));
       } catch (extError) {
         console.error('❌ Extension connection failed:', extError);
         removeToast(loadingToastId);
@@ -264,6 +259,7 @@ const BookmarkManager: React.FC = () => {
       }
 
       // Test database connection
+      console.log('🧪 Testing database connection...');
       updateToast(loadingToastId, { 
         title: 'Syncing Bookmarks', 
         message: 'Testing database connection...' 
@@ -271,6 +267,7 @@ const BookmarkManager: React.FC = () => {
 
       try {
         const dbTest = await BookmarkService.testConnection(user!.id);
+        console.log('Database test result:', dbTest);
         if (!dbTest.success) {
           throw new Error(dbTest.message);
         }
@@ -282,7 +279,9 @@ const BookmarkManager: React.FC = () => {
       }
 
       // Now perform the actual sync
+      console.log('🔄 Starting actual sync...');
       const result = await syncWithExtension((status) => {
+        console.log('Sync progress:', status);
         updateToast(loadingToastId, { 
           title: 'Syncing Bookmarks', 
           message: status 
@@ -290,6 +289,8 @@ const BookmarkManager: React.FC = () => {
       });
       
       removeToast(loadingToastId);
+      
+      console.log('✅ Sync completed with result:', result);
       
       if (result.hasChanges) {
         const changes = [];
@@ -302,12 +303,13 @@ const BookmarkManager: React.FC = () => {
           `Successfully synced ${result.total} bookmarks. Changes: ${changes.join(', ')}`
         );
 
-        // Update embeddings for new bookmarks (non-blocking)
-        if (result.inserted > 0 && semanticSearchAvailable) {
+        // Update embeddings for new bookmarks
+        if (result.inserted > 0) {
           try {
             await SemanticSearchService.updateUserEmbeddings(user!.id);
+            console.log('✅ Embeddings updated for new bookmarks');
           } catch (embError) {
-            // Silent fail for embeddings
+            console.warn('⚠️ Failed to update embeddings:', embError);
           }
         }
       } else {
@@ -376,13 +378,20 @@ const BookmarkManager: React.FC = () => {
 
   // Debug sync button for development
   const handleDebugSync = async () => {
+    console.log('🐛 DEBUG SYNC: Starting detailed sync analysis...');
+    console.log('🐛 User:', user);
+    console.log('🐛 Extension available:', extensionAvailable);
+    console.log('🐛 Extension status:', extensionStatus);
+    
     // Check prerequisites
     if (!user) {
+      console.error('🐛 DEBUG SYNC: User not logged in');
       showError('Debug Sync Failed', 'User not logged in');
       return;
     }
     
     if (extensionStatus !== 'available') {
+      console.error('🐛 DEBUG SYNC: Extension not available, status:', extensionStatus);
       showError('Debug Sync Failed', `Chrome extension not available (status: ${extensionStatus})`);
       return;
     }
@@ -391,7 +400,9 @@ const BookmarkManager: React.FC = () => {
     
     try {
       // Test extension connection first
+      console.log('🐛 Testing extension connection...');
       const extTest = await ExtensionService.testConnection();
+      console.log('🐛 Extension test result:', extTest);
       
       if (!extTest.success) {
         removeToast(loadingToastId);
@@ -400,13 +411,18 @@ const BookmarkManager: React.FC = () => {
       }
       
       // Get extension bookmarks
+      console.log('🐛 Getting extension bookmarks...');
       const extensionBookmarks = await ExtensionService.getBookmarks();
+      console.log('🐛 Extension bookmarks:', extensionBookmarks);
       
       // Get database bookmarks
+      console.log('🐛 Getting database bookmarks...');
       const databaseBookmarks = await BookmarkService.getBookmarks(user.id);
+      console.log('🐛 Database bookmarks:', databaseBookmarks);
       
       // Get total database count
       const totalCount = await BookmarkService.getAllBookmarksCount();
+      console.log('🐛 Total database bookmarks:', totalCount);
       
       // Analyze differences
       const extIds = new Set(extensionBookmarks.map(b => b.id));
@@ -415,8 +431,21 @@ const BookmarkManager: React.FC = () => {
       const newInExtension = extensionBookmarks.filter(b => !dbChromeIds.has(b.id));
       const removedFromExtension = databaseBookmarks.filter(b => b.chrome_bookmark_id && !extIds.has(b.chrome_bookmark_id));
       
+      const analysis = {
+        extensionCount: extensionBookmarks.length,
+        databaseCount: databaseBookmarks.length,
+        totalDatabaseCount: totalCount,
+        newInExtension: newInExtension.length,
+        removedFromExtension: removedFromExtension.length,
+        newBookmarks: newInExtension.slice(0, 3),
+        removedBookmarks: removedFromExtension.slice(0, 3),
+        extensionTest: extTest
+      };
+      
+      console.log('🐛 Analysis:', analysis);
+      
       removeToast(loadingToastId);
-      showSuccess('Debug Analysis Complete', `Extension: ${extensionBookmarks.length} bookmarks, Database: ${databaseBookmarks.length} bookmarks, New: ${newInExtension.length}, Removed: ${removedFromExtension.length}. Check console for details.`);
+      showSuccess('Debug Analysis Complete', `Extension: ${analysis.extensionCount} bookmarks, Database: ${analysis.databaseCount} bookmarks, New: ${analysis.newInExtension}, Removed: ${analysis.removedFromExtension}. Check console for details.`);
       
     } catch (err) {
       console.error('🐛 Debug sync failed:', err);
@@ -426,6 +455,8 @@ const BookmarkManager: React.FC = () => {
   };
 
   const handleSemanticSearchResult = (result: SemanticSearchResult) => {
+    console.log('🔍 Semantic search result selected:', result);
+    
     // Perform a semantic search to get related results
     if (user) {
       SemanticSearchService.searchBookmarks(result.title, {
@@ -435,6 +466,7 @@ const BookmarkManager: React.FC = () => {
       }).then(results => {
         setSemanticSearchResults(results);
         setUseSemanticResults(true);
+        console.log(`✅ Found ${results.length} semantic search results`);
       }).catch(error => {
         console.error('❌ Semantic search failed:', error);
         setUseSemanticResults(false);
@@ -453,16 +485,14 @@ const BookmarkManager: React.FC = () => {
       
       if (result.success) {
         showSuccess('Semantic Search Test', result.message);
-        setSemanticSearchAvailable(true);
+        console.log('Semantic search test results:', result.sampleResults);
       } else {
         showError('Semantic Search Test Failed', result.message);
-        setSemanticSearchAvailable(false);
       }
     } catch (err) {
       removeToast(loadingToastId);
       const message = err instanceof Error ? err.message : 'Semantic search test failed';
       showError('Semantic Search Test Error', message);
-      setSemanticSearchAvailable(false);
     }
   };
 
@@ -512,13 +542,11 @@ const BookmarkManager: React.FC = () => {
                        extensionStatus === 'available' ? 'Connected' : 'Not Available'}
                     </span>
                   </div>
-                  {semanticSearchAvailable && (
-                    <div className="flex items-center">
-                      <Sparkles className="w-4 h-4 mr-1" />
-                      <span>AI Search</span>
-                      <div className="w-2 h-2 rounded-full ml-2 bg-purple-500" />
-                    </div>
-                  )}
+                  <div className="flex items-center">
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    <span>AI Search</span>
+                    <div className="w-2 h-2 rounded-full ml-2 bg-purple-500" />
+                  </div>
                   {syncStatus && (
                     <div className="flex items-center text-blue-600">
                       <Clock className="w-4 h-4 mr-1" />
@@ -542,16 +570,14 @@ const BookmarkManager: React.FC = () => {
                     <TestTube className="w-4 h-4 mr-2" />
                     Test DB
                   </button>
-                  {semanticSearchAvailable && (
-                    <button
-                      onClick={handleTestSemanticSearch}
-                      className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
-                      title="Test semantic search"
-                    >
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Test AI
-                    </button>
-                  )}
+                  <button
+                    onClick={handleTestSemanticSearch}
+                    className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                    title="Test semantic search"
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Test AI
+                  </button>
                   <button
                     onClick={handleDebugSync}
                     className="inline-flex items-center px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
@@ -672,7 +698,7 @@ const BookmarkManager: React.FC = () => {
           folderNames={getFolderNames()}
           onAddBookmark={handleAddBookmark}
           loading={loading}
-          onSemanticSearchResult={semanticSearchAvailable ? handleSemanticSearchResult : undefined}
+          onSemanticSearchResult={handleSemanticSearchResult}
         />
 
         <BookmarkGrid

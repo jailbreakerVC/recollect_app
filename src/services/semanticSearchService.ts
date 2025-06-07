@@ -18,123 +18,94 @@ export interface SearchOptions {
 
 export class SemanticSearchService {
   /**
-   * Check if semantic search is available with improved detection
-   */
-  static async isSemanticSearchAvailable(): Promise<boolean> {
-    try {
-      // First check if the test function exists and works
-      const { data, error } = await supabase.rpc('test_semantic_search_availability');
-      
-      if (error) {
-        // If test function doesn't exist, try the main function directly
-        const { error: searchError } = await supabase.rpc('search_bookmarks_semantic', {
-          search_query: 'test',
-          user_id_param: 'test',
-          similarity_threshold: 0.1,
-          max_results: 1
-        });
-        
-        // Function exists if we don't get a "function does not exist" error
-        return !searchError || !searchError.message.includes('function') || !searchError.message.includes('does not exist');
-      }
-      
-      return data === true;
-    } catch (err) {
-      console.warn('Semantic search availability check failed:', err);
-      return false;
-    }
-  }
-
-  /**
-   * Perform semantic search on bookmarks with enhanced error handling
+   * Perform semantic search on bookmarks
    */
   static async searchBookmarks(
     query: string,
     options: SearchOptions
   ): Promise<SemanticSearchResult[]> {
     const {
-      similarityThreshold = 0.3,
+      similarityThreshold = 0.3, // Lower threshold for better recall
       maxResults = 20,
       userId
     } = options;
 
-    // Validate inputs
-    if (!query || query.trim().length === 0) {
-      return [];
-    }
-
-    if (!userId || userId.trim().length === 0) {
-      throw new Error('User ID is required for search');
-    }
+    console.log('🔍 Performing semantic search:', {
+      query,
+      userId,
+      similarityThreshold,
+      maxResults
+    });
 
     try {
       const { data, error } = await supabase.rpc('search_bookmarks_semantic', {
         search_query: query.trim(),
         user_id_param: userId,
-        similarity_threshold: Math.max(0.0, Math.min(1.0, similarityThreshold)),
-        max_results: Math.max(1, Math.min(100, maxResults))
+        similarity_threshold: similarityThreshold,
+        max_results: maxResults
       });
 
       if (error) {
-        console.error('❌ Semantic search RPC failed:', error);
+        console.error('❌ Semantic search failed:', error);
         
-        // Check if it's a function not found error
-        if (error.message.includes('function') && error.message.includes('does not exist')) {
-          console.warn('Semantic search function not available, using fallback');
-          return this.fallbackTextSearch(query, options);
-        }
-        
-        // For other errors, try fallback
-        console.warn('Semantic search failed, trying fallback:', error.message);
+        // Fallback to regular text search if semantic search fails
         return this.fallbackTextSearch(query, options);
+      }
+
+      console.log(`✅ Semantic search found ${data?.length || 0} results`);
+      
+      // Log search type distribution
+      if (data && data.length > 0) {
+        const searchTypes = data.reduce((acc: any, result: any) => {
+          acc[result.search_type] = (acc[result.search_type] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('Search type distribution:', searchTypes);
       }
 
       return data || [];
     } catch (err) {
       console.error('❌ Semantic search error:', err);
       
-      // Always fallback to text search on error
+      // Fallback to regular text search
       return this.fallbackTextSearch(query, options);
     }
   }
 
   /**
-   * Enhanced fallback text search using ILIKE and trigrams
+   * Fallback text search using ILIKE and trigrams
    */
   private static async fallbackTextSearch(
     query: string,
     options: SearchOptions
   ): Promise<SemanticSearchResult[]> {
+    console.log('🔄 Falling back to text search for query:', query);
+
     try {
-      const searchTerm = query.trim().toLowerCase();
-      
       const { data, error } = await supabase
         .from('bookmarks')
         .select('id, title, url, folder, date_added')
         .eq('user_id', options.userId)
-        .or(`title.ilike.%${searchTerm}%,url.ilike.%${searchTerm}%`)
+        .or(`title.ilike.%${query}%,url.ilike.%${query}%`)
         .order('date_added', { ascending: false })
         .limit(options.maxResults || 20);
 
       if (error) {
-        console.error('❌ Fallback text search failed:', error);
         throw error;
       }
 
-      // Convert to semantic search result format with calculated similarity
+      // Convert to semantic search result format
       const results: SemanticSearchResult[] = (data || []).map(bookmark => ({
         ...bookmark,
         similarity_score: this.calculateTextSimilarity(query, bookmark.title),
         search_type: 'trigram_fallback' as const
       }));
 
-      // Sort by similarity score (highest first)
+      // Sort by similarity score
       results.sort((a, b) => b.similarity_score - a.similarity_score);
 
-      // Filter by similarity threshold
-      const threshold = options.similarityThreshold || 0.1; // Lower threshold for fallback
-      return results.filter(result => result.similarity_score >= threshold);
-
+      console.log(`✅ Fallback text search found ${results.length} results`);
+      return results;
     } catch (err) {
       console.error('❌ Fallback text search failed:', err);
       return [];
@@ -142,112 +113,91 @@ export class SemanticSearchService {
   }
 
   /**
-   * Improved text similarity calculation
+   * Simple text similarity calculation
    */
   private static calculateTextSimilarity(query: string, title: string): number {
-    const queryLower = query.toLowerCase().trim();
-    const titleLower = title.toLowerCase().trim();
+    const queryLower = query.toLowerCase();
+    const titleLower = title.toLowerCase();
 
     // Exact match
     if (titleLower === queryLower) return 1.0;
 
-    // Exact substring match
+    // Contains query
     if (titleLower.includes(queryLower)) {
       return 0.8 * (queryLower.length / titleLower.length);
     }
 
-    // Word-based similarity
-    const queryWords = queryLower.split(/\s+/).filter(word => word.length > 0);
-    const titleWords = titleLower.split(/\s+/).filter(word => word.length > 0);
+    // Word overlap
+    const queryWords = queryLower.split(/\s+/);
+    const titleWords = titleLower.split(/\s+/);
     
-    if (queryWords.length === 0 || titleWords.length === 0) return 0;
-    
-    // Count exact word matches
-    const exactMatches = queryWords.filter(qWord => 
-      titleWords.some(tWord => tWord === qWord)
+    const overlap = queryWords.filter(word => 
+      titleWords.some(titleWord => titleWord.includes(word) || word.includes(titleWord))
     ).length;
-    
-    // Count partial word matches
-    const partialMatches = queryWords.filter(qWord => 
-      titleWords.some(tWord => tWord.includes(qWord) || qWord.includes(tWord))
-    ).length;
-    
-    // Calculate similarity score
-    const exactScore = exactMatches / queryWords.length;
-    const partialScore = (partialMatches - exactMatches) / queryWords.length * 0.5;
-    
-    return Math.min(1.0, exactScore + partialScore);
+
+    return overlap / Math.max(queryWords.length, titleWords.length) * 0.6;
   }
 
   /**
-   * Update embeddings for a specific user's bookmarks (non-blocking)
+   * Update embeddings for a specific user's bookmarks
    */
   static async updateUserEmbeddings(userId: string): Promise<number> {
-    try {
-      // Validate user ID
-      if (!userId || userId.trim().length === 0) {
-        console.warn('Invalid user ID provided for embedding update');
-        return 0;
-      }
+    console.log('🔄 Updating embeddings for user:', userId);
 
-      // Check if the function exists first
+    try {
       const { data, error } = await supabase.rpc('update_bookmark_embeddings', {
         user_id_param: userId
       });
 
       if (error) {
-        // If function doesn't exist, log warning but don't throw
-        if (error.message.includes('function') && error.message.includes('does not exist')) {
-          console.warn('⚠️ Embedding update function not available, skipping embedding update');
-          return 0;
-        }
-        
-        console.warn('⚠️ Failed to update embeddings (non-critical):', error.message);
-        return 0;
+        console.error('❌ Failed to update embeddings:', error);
+        throw new Error(`Failed to update embeddings: ${error.message}`);
       }
 
       const updatedCount = data || 0;
-      
-      if (updatedCount > 0) {
-        console.log(`✅ Updated embeddings for ${updatedCount} bookmarks`);
-      }
+      console.log(`✅ Updated embeddings for ${updatedCount} bookmarks`);
       
       return updatedCount;
     } catch (err) {
-      // Silent fail for embedding updates - they're not critical
-      console.warn('⚠️ Embedding update failed (non-critical):', err);
-      return 0;
+      console.error('❌ Error updating embeddings:', err);
+      throw err;
     }
   }
 
   /**
-   * Test semantic search functionality with comprehensive testing
+   * Update embeddings for all bookmarks (admin function)
+   */
+  static async updateAllEmbeddings(): Promise<number> {
+    console.log('🔄 Updating embeddings for all bookmarks...');
+
+    try {
+      const { data, error } = await supabase.rpc('update_bookmark_embeddings');
+
+      if (error) {
+        console.error('❌ Failed to update all embeddings:', error);
+        throw new Error(`Failed to update embeddings: ${error.message}`);
+      }
+
+      const updatedCount = data || 0;
+      console.log(`✅ Updated embeddings for ${updatedCount} bookmarks globally`);
+      
+      return updatedCount;
+    } catch (err) {
+      console.error('❌ Error updating all embeddings:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Test semantic search functionality
    */
   static async testSemanticSearch(userId: string): Promise<{
     success: boolean;
     message: string;
     sampleResults?: SemanticSearchResult[];
-    details?: any;
   }> {
     try {
-      // First check if semantic search is available
-      const isAvailable = await this.isSemanticSearchAvailable();
-      
-      if (!isAvailable) {
-        return {
-          success: false,
-          message: 'Semantic search functions are not available in the database',
-          details: { availability: false }
-        };
-      }
-
-      // Try to update embeddings first (non-blocking)
-      let embeddingUpdateCount = 0;
-      try {
-        embeddingUpdateCount = await this.updateUserEmbeddings(userId);
-      } catch (embeddingError) {
-        console.warn('Embedding update failed during test:', embeddingError);
-      }
+      console.log('🧪 Testing semantic search functionality...');
 
       // Test with a simple query
       const testQuery = 'github';
@@ -257,24 +207,15 @@ export class SemanticSearchService {
         similarityThreshold: 0.1
       });
 
-      const searchTypes = [...new Set(results.map(r => r.search_type))];
-      
       return {
         success: true,
-        message: `Semantic search test successful. Found ${results.length} results for "${testQuery}" using: ${searchTypes.join(', ')}`,
-        sampleResults: results,
-        details: {
-          availability: true,
-          embeddingUpdateCount,
-          searchTypes,
-          resultCount: results.length
-        }
+        message: `Semantic search test successful. Found ${results.length} results for "${testQuery}"`,
+        sampleResults: results
       };
     } catch (err) {
       return {
         success: false,
-        message: `Semantic search test failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        details: { error: err }
+        message: `Semantic search test failed: ${err instanceof Error ? err.message : 'Unknown error'}`
       };
     }
   }
@@ -287,7 +228,7 @@ export class SemanticSearchService {
     userId: string,
     maxSuggestions: number = 5
   ): Promise<string[]> {
-    if (!partialQuery || partialQuery.length < 2) return [];
+    if (partialQuery.length < 2) return [];
 
     try {
       const { data, error } = await supabase
@@ -312,11 +253,6 @@ export class SemanticSearchService {
             suggestions.add(word);
           }
         });
-        
-        // Also add full titles that match
-        if (bookmark.title.toLowerCase().includes(partialQuery.toLowerCase())) {
-          suggestions.add(bookmark.title);
-        }
       });
 
       return Array.from(suggestions).slice(0, maxSuggestions);
