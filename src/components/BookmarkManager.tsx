@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { ExtensionService } from '../services/extensionService';
+import { BookmarkService } from '../services/bookmarkService';
 import { ToastContainer, useToast } from './Toast';
 
 const BookmarkManager: React.FC = () => {
@@ -27,6 +28,7 @@ const BookmarkManager: React.FC = () => {
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'folder'>('date');
   const [showAddForm, setShowAddForm] = useState(false);
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   // Initialize extension service and clean up on unmount
   useEffect(() => {
@@ -40,6 +42,22 @@ const BookmarkManager: React.FC = () => {
       // Don't cleanup the service here as other components might be using it
     };
   }, []);
+
+  // Debug user context in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && user) {
+      const debugContext = async () => {
+        try {
+          const debug = await BookmarkService.debugUserContext();
+          setDebugInfo(debug);
+        } catch (err) {
+          console.error('Failed to get debug info:', err);
+        }
+      };
+      
+      debugContext();
+    }
+  }, [user]);
 
   const filteredBookmarks = bookmarks
     .filter(bookmark => {
@@ -172,6 +190,18 @@ const BookmarkManager: React.FC = () => {
       const message = err instanceof Error ? err.message : 'Failed to refresh bookmarks';
       showError('Refresh Failed', message);
       console.error('Failed to refresh bookmarks:', err);
+    }
+  };
+
+  const handleDebugRefresh = async () => {
+    if (user) {
+      try {
+        const debug = await BookmarkService.debugUserContext();
+        setDebugInfo(debug);
+        showSuccess('Debug Info Updated', 'User context debug information refreshed');
+      } catch (err) {
+        showError('Debug Failed', 'Failed to get debug information');
+      }
     }
   };
 
@@ -327,7 +357,16 @@ const BookmarkManager: React.FC = () => {
         {/* Debug Information */}
         {process.env.NODE_ENV === 'development' && (
           <div className="mb-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-900 mb-2">Debug Information</h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-semibold text-gray-900">Debug Information</h4>
+              <button
+                onClick={handleDebugRefresh}
+                className="inline-flex items-center px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors"
+              >
+                <Bug className="w-3 h-3 mr-1" />
+                Refresh Debug
+              </button>
+            </div>
             <div className="text-sm text-gray-600 space-y-1">
               <div>Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? '✅ Set' : '❌ Missing'}</div>
               <div>Supabase Key: {import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing'}</div>
@@ -339,6 +378,12 @@ const BookmarkManager: React.FC = () => {
               <div>Loading: {loading ? 'Yes' : 'No'}</div>
               <div>Error: {error || 'None'}</div>
               <div>Sync Status: {syncStatus || 'None'}</div>
+              {debugInfo && (
+                <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
+                  <div className="font-medium mb-1">User Context Debug:</div>
+                  <pre className="whitespace-pre-wrap">{JSON.stringify(debugInfo, null, 2)}</pre>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -511,7 +556,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">
