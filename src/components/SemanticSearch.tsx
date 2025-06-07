@@ -136,9 +136,9 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
   const getSearchTypeIcon = () => {
     switch (searchType) {
       case 'semantic':
-        return <Sparkles className="w-4 h-4 text-purple-500" title="AI-powered semantic search" />;
+        return <Sparkles className="w-4 h-4 text-purple-500\" title="AI-powered semantic search" />;
       case 'trigram':
-        return <TrendingUp className="w-4 h-4 text-blue-500" title="Text similarity search" />;
+        return <TrendingUp className="w-4 h-4 text-blue-500\" title="Text similarity search" />;
       default:
         return <Search className="w-4 h-4 text-gray-400" />;
     }
