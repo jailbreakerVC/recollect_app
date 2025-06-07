@@ -20,40 +20,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Please check your .env file.');
 }
 
-console.log('🚀 Initializing Supabase client with improved realtime config...');
+console.log('🚀 Initializing Supabase client with current v2 API...');
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: {
     params: {
-      eventsPerSecond: 5, // Reduced from 10 to be more conservative
+      eventsPerSecond: 5, // Conservative rate limiting
     },
     heartbeatIntervalMs: 30000, // 30 seconds
     reconnectAfterMs: (tries: number) => Math.min(tries * 1000, 10000), // Exponential backoff up to 10s
     timeout: 20000, // 20 second timeout
-    transport: 'websocket',
-    encode: (payload: any, callback: (encoded: string) => void) => {
-      console.log('📤 Realtime encode:', payload);
-      callback(JSON.stringify(payload));
-    },
-    decode: (payload: string, callback: (decoded: any) => void) => {
-      try {
-        const decoded = JSON.parse(payload);
-        console.log('📥 Realtime decode:', decoded);
-        callback(decoded);
-      } catch (error) {
-        console.error('❌ Realtime decode error:', error);
-        callback({});
-      }
-    },
-    logger: (kind: string, msg: string, data?: any) => {
-      if (kind === 'error') {
-        console.error(`🔴 Realtime ${kind}:`, msg, data);
-      } else if (kind === 'info') {
-        console.log(`🔵 Realtime ${kind}:`, msg, data);
-      } else {
-        console.log(`⚪ Realtime ${kind}:`, msg, data);
-      }
-    }
   },
   auth: {
     persistSession: false, // We're handling our own auth
@@ -66,51 +42,113 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Add connection state monitoring
-let connectionRetries = 0;
-const maxRetries = 5;
+// Connection monitoring state
+let globalConnectionRetries = 0;
+const maxGlobalRetries = 5;
+let connectionMonitoringActive = false;
 
-// Monitor realtime connection status
+// Monitor realtime connection status using current v2 API
 const monitorConnection = () => {
-  console.log('🔍 Setting up realtime connection monitoring...');
+  if (connectionMonitoringActive) {
+    console.log('🔍 Connection monitoring already active, skipping...');
+    return;
+  }
   
-  // Listen for connection state changes
-  supabase.realtime.onOpen(() => {
-    console.log('✅ Realtime WebSocket connection opened successfully');
-    connectionRetries = 0; // Reset retry counter on successful connection
-  });
-
-  supabase.realtime.onClose((event) => {
-    console.warn('⚠️ Realtime WebSocket connection closed:', {
-      code: event?.code,
-      reason: event?.reason,
-      wasClean: event?.wasClean,
-      retries: connectionRetries
-    });
-    
-    // Attempt to reconnect if we haven't exceeded max retries
-    if (connectionRetries < maxRetries) {
-      connectionRetries++;
-      const delay = Math.min(connectionRetries * 2000, 10000); // Exponential backoff
-      console.log(`🔄 Attempting to reconnect in ${delay}ms (attempt ${connectionRetries}/${maxRetries})`);
-      
-      setTimeout(() => {
-        console.log('🔄 Attempting realtime reconnection...');
-        supabase.realtime.connect();
-      }, delay);
-    } else {
-      console.error('❌ Max reconnection attempts reached. Realtime features may be unavailable.');
+  console.log('🔍 Setting up realtime connection monitoring with v2 API...');
+  connectionMonitoringActive = true;
+  
+  // Create a monitoring channel to track connection state
+  const monitorChannel = supabase.channel('connection-monitor', {
+    config: {
+      broadcast: { self: false },
+      presence: { key: 'monitor' }
     }
   });
 
-  supabase.realtime.onError((error) => {
-    console.error('❌ Realtime WebSocket error:', {
-      error: error,
-      message: error?.message,
-      type: error?.type,
-      retries: connectionRetries
+  monitorChannel
+    .subscribe((status, err) => {
+      console.log('📡 Connection monitor status changed:', {
+        status: status,
+        error: err,
+        timestamp: new Date().toISOString(),
+        retries: globalConnectionRetries
+      });
+      
+      switch (status) {
+        case 'SUBSCRIBED':
+          console.log('✅ Realtime connection established successfully');
+          globalConnectionRetries = 0; // Reset retry counter on successful connection
+          break;
+          
+        case 'CHANNEL_ERROR':
+          console.error('❌ Realtime channel error occurred:', err);
+          handleConnectionError(err);
+          break;
+          
+        case 'TIMED_OUT':
+          console.warn('⏰ Realtime connection timed out');
+          handleConnectionTimeout();
+          break;
+          
+        case 'CLOSED':
+          console.warn('🔒 Realtime connection closed');
+          handleConnectionClosed();
+          break;
+          
+        case 'CONNECTING':
+          console.log('🔄 Realtime connection attempting...');
+          break;
+          
+        default:
+          console.log('🔄 Realtime connection status:', status);
+      }
     });
+};
+
+const handleConnectionError = (error: any) => {
+  console.error('❌ Realtime connection error:', {
+    error: error,
+    message: error?.message,
+    type: error?.type,
+    retries: globalConnectionRetries
   });
+  
+  attemptReconnection('error');
+};
+
+const handleConnectionTimeout = () => {
+  console.warn('⏰ Realtime connection timeout:', {
+    retries: globalConnectionRetries,
+    timestamp: new Date().toISOString()
+  });
+  
+  attemptReconnection('timeout');
+};
+
+const handleConnectionClosed = () => {
+  console.warn('🔒 Realtime connection closed:', {
+    retries: globalConnectionRetries,
+    timestamp: new Date().toISOString()
+  });
+  
+  attemptReconnection('closed');
+};
+
+const attemptReconnection = (reason: string) => {
+  if (globalConnectionRetries < maxGlobalRetries) {
+    globalConnectionRetries++;
+    const delay = Math.min(globalConnectionRetries * 2000, 10000); // Exponential backoff
+    
+    console.log(`🔄 Attempting to reconnect due to ${reason} in ${delay}ms (attempt ${globalConnectionRetries}/${maxGlobalRetries})`);
+    
+    setTimeout(() => {
+      console.log('🔄 Executing reconnection attempt...');
+      reconnectRealtime();
+    }, delay);
+  } else {
+    console.error('❌ Max reconnection attempts reached. Realtime features may be unavailable.');
+    console.error('💡 Try refreshing the page or check your network connection.');
+  }
 };
 
 // Initialize connection monitoring
@@ -238,17 +276,63 @@ supabase.rpc('get_current_user_id').then(({ data, error }) => {
 
 // Export a helper function to check connection status
 export const getConnectionStatus = () => {
-  const state = supabase.realtime.channels[0]?.state || 'disconnected';
-  console.log('📊 Current realtime connection state:', state);
+  // Get the first channel's state as a proxy for overall connection status
+  const channels = supabase.getChannels();
+  const state = channels.length > 0 ? channels[0].state : 'disconnected';
+  console.log('📊 Current realtime connection state:', {
+    state: state,
+    channelCount: channels.length,
+    channels: channels.map(c => ({ topic: c.topic, state: c.state }))
+  });
   return state;
 };
 
 // Export a helper function to manually reconnect
 export const reconnectRealtime = () => {
   console.log('🔄 Manual realtime reconnection requested...');
-  connectionRetries = 0; // Reset retry counter
-  supabase.realtime.disconnect();
-  setTimeout(() => {
-    supabase.realtime.connect();
-  }, 1000);
+  globalConnectionRetries = 0; // Reset retry counter
+  
+  try {
+    // Remove all existing channels
+    const channels = supabase.getChannels();
+    console.log(`🧹 Removing ${channels.length} existing channels before reconnect...`);
+    
+    channels.forEach(channel => {
+      console.log(`🗑️ Removing channel: ${channel.topic}`);
+      supabase.removeChannel(channel);
+    });
+    
+    console.log('✅ All channels removed, ready for fresh connections');
+    
+    // Reset connection monitoring
+    connectionMonitoringActive = false;
+    
+    // Restart monitoring after a brief delay
+    setTimeout(() => {
+      console.log('🔄 Restarting connection monitoring...');
+      monitorConnection();
+    }, 1000);
+    
+  } catch (error) {
+    console.error('❌ Error during manual reconnection:', {
+      error: error,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+// Export helper to get detailed connection info
+export const getDetailedConnectionInfo = () => {
+  const channels = supabase.getChannels();
+  return {
+    channelCount: channels.length,
+    channels: channels.map(c => ({
+      topic: c.topic,
+      state: c.state,
+      joinRef: c.joinRef
+    })),
+    retries: globalConnectionRetries,
+    maxRetries: maxGlobalRetries,
+    monitoringActive: connectionMonitoringActive
+  };
 };
