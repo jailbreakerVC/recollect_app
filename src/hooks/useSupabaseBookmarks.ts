@@ -138,7 +138,15 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           code: supabaseError.code,
           userId: user.id
         });
-        throw supabaseError;
+        
+        // Provide more specific error messages
+        if (supabaseError.code === '42501') {
+          throw new Error('Permission denied. Please check your authentication and try refreshing the page.');
+        } else if (supabaseError.code === 'PGRST116') {
+          throw new Error('Database table not found. Please ensure the database is properly set up.');
+        } else {
+          throw supabaseError;
+        }
       }
       
       console.log('✅ Bookmarks loaded successfully:', {
@@ -435,9 +443,16 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       userId: user.id
     });
 
+    setLoading(true);
+    setError(null);
+
     try {
       console.log('🔑 Setting auth context before add...');
-      await setAuthContext(user.id);
+      const authResult = await setAuthContext(user.id);
+      
+      if (authResult.error) {
+        console.warn('⚠️ Auth context setup had issues:', authResult.error);
+      }
       
       const bookmarkData = {
         user_id: user.id,
@@ -460,7 +475,13 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           error: error,
           bookmarkData: bookmarkData
         });
-        throw error;
+        
+        // Provide more specific error messages
+        if (error.code === '42501') {
+          throw new Error('Permission denied. Please refresh the page and try again.');
+        } else {
+          throw error;
+        }
       }
       
       console.log('✅ Bookmark added to database:', data);
@@ -491,7 +512,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         url: url,
         folder: folder
       });
+      setError(err instanceof Error ? err.message : 'Failed to add bookmark');
       throw new Error(err instanceof Error ? err.message : 'Failed to add bookmark');
+    } finally {
+      setLoading(false);
     }
   }, [user, extensionAvailable, sendMessageToExtension, loadBookmarks]);
 
@@ -505,6 +529,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       bookmarkId: id,
       userId: user.id
     });
+
+    setLoading(true);
+    setError(null);
 
     try {
       console.log('🔑 Setting auth context before remove...');
@@ -538,7 +565,12 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           bookmarkId: id,
           userId: user.id
         });
-        throw error;
+        
+        if (error.code === '42501') {
+          throw new Error('Permission denied. Please refresh the page and try again.');
+        } else {
+          throw error;
+        }
       }
       
       console.log('✅ Bookmark removed from database');
@@ -566,7 +598,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         stack: err instanceof Error ? err.stack : undefined,
         bookmarkId: id
       });
+      setError(err instanceof Error ? err.message : 'Failed to remove bookmark');
       throw new Error(err instanceof Error ? err.message : 'Failed to remove bookmark');
+    } finally {
+      setLoading(false);
     }
   }, [user, extensionAvailable, sendMessageToExtension, loadBookmarks]);
 
@@ -581,6 +616,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       updates: updates,
       userId: user.id
     });
+
+    setLoading(true);
+    setError(null);
 
     try {
       console.log('🔑 Setting auth context before update...');
@@ -602,7 +640,12 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           updates: updates,
           userId: user.id
         });
-        throw error;
+        
+        if (error.code === '42501') {
+          throw new Error('Permission denied. Please refresh the page and try again.');
+        } else {
+          throw error;
+        }
       }
       
       console.log('✅ Bookmark updated successfully:', data);
@@ -617,7 +660,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         bookmarkId: id,
         updates: updates
       });
+      setError(err instanceof Error ? err.message : 'Failed to update bookmark');
       throw new Error(err instanceof Error ? err.message : 'Failed to update bookmark');
+    } finally {
+      setLoading(false);
     }
   }, [user, loadBookmarks]);
 
