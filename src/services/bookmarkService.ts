@@ -2,13 +2,31 @@ import { supabase, DatabaseBookmark } from '../lib/supabase';
 
 export class BookmarkService {
   /**
+   * Set user context for RLS policies
+   */
+  private static async setUserContext(userId: string): Promise<void> {
+    // Set the user ID in the database session for RLS policies
+    const { error } = await supabase.rpc('set_config', {
+      setting_name: 'app.user_id',
+      setting_value: userId,
+      is_local: true
+    });
+
+    if (error) {
+      console.warn('Failed to set user context:', error.message);
+    }
+  }
+
+  /**
    * Fetch all bookmarks for a user
    */
   static async getBookmarks(userId: string): Promise<DatabaseBookmark[]> {
+    // Set user context for RLS
+    await this.setUserContext(userId);
+
     const { data, error } = await supabase
       .from('bookmarks')
       .select('*')
-      .eq('user_id', userId)
       .order('date_added', { ascending: false });
 
     if (error) {
@@ -28,6 +46,9 @@ export class BookmarkService {
     folder?: string,
     chromeBookmarkId?: string
   ): Promise<DatabaseBookmark> {
+    // Set user context for RLS
+    await this.setUserContext(userId);
+
     const bookmarkData = {
       user_id: userId,
       title,
@@ -58,11 +79,13 @@ export class BookmarkService {
     userId: string,
     updates: Partial<DatabaseBookmark>
   ): Promise<DatabaseBookmark> {
+    // Set user context for RLS
+    await this.setUserContext(userId);
+
     const { data, error } = await supabase
       .from('bookmarks')
       .update(updates)
       .eq('id', bookmarkId)
-      .eq('user_id', userId)
       .select()
       .single();
 
@@ -77,11 +100,13 @@ export class BookmarkService {
    * Remove a bookmark
    */
   static async removeBookmark(bookmarkId: string, userId: string): Promise<void> {
+    // Set user context for RLS
+    await this.setUserContext(userId);
+
     const { error } = await supabase
       .from('bookmarks')
       .delete()
-      .eq('id', bookmarkId)
-      .eq('user_id', userId);
+      .eq('id', bookmarkId);
 
     if (error) {
       throw new Error(`Failed to remove bookmark: ${error.message}`);
@@ -95,11 +120,13 @@ export class BookmarkService {
     chromeBookmarkId: string,
     userId: string
   ): Promise<DatabaseBookmark | null> {
+    // Set user context for RLS
+    await this.setUserContext(userId);
+
     const { data, error } = await supabase
       .from('bookmarks')
       .select('*')
       .eq('chrome_bookmark_id', chromeBookmarkId)
-      .eq('user_id', userId)
       .single();
 
     if (error && error.code !== 'PGRST116') {
@@ -112,8 +139,14 @@ export class BookmarkService {
   /**
    * Bulk insert bookmarks (for sync operations)
    */
-  static async bulkInsertBookmarks(bookmarks: Partial<DatabaseBookmark>[]): Promise<DatabaseBookmark[]> {
+  static async bulkInsertBookmarks(
+    userId: string,
+    bookmarks: Partial<DatabaseBookmark>[]
+  ): Promise<DatabaseBookmark[]> {
     if (bookmarks.length === 0) return [];
+
+    // Set user context for RLS
+    await this.setUserContext(userId);
 
     const { data, error } = await supabase
       .from('bookmarks')
@@ -136,10 +169,12 @@ export class BookmarkService {
   ): Promise<void> {
     if (chromeBookmarkIds.length === 0) return;
 
+    // Set user context for RLS
+    await this.setUserContext(userId);
+
     const { error } = await supabase
       .from('bookmarks')
       .delete()
-      .eq('user_id', userId)
       .in('chrome_bookmark_id', chromeBookmarkIds);
 
     if (error) {

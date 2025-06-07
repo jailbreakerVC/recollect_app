@@ -72,7 +72,7 @@ export class SyncService {
     const operations = [];
 
     if (bookmarksToInsert.length > 0) {
-      operations.push(BookmarkService.bulkInsertBookmarks(bookmarksToInsert));
+      operations.push(BookmarkService.bulkInsertBookmarks(userId, bookmarksToInsert));
     }
 
     if (bookmarksToUpdate.length > 0) {
