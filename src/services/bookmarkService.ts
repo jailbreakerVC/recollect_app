@@ -60,10 +60,24 @@ export class BookmarkService {
    */
   static async debugUserContext(): Promise<any> {
     try {
+      // Try the function without parameters first
       const { data, error } = await supabase.rpc('debug_user_context');
       
       if (error) {
         console.error('Debug context error:', error);
+        
+        // If the function doesn't exist, return basic debug info
+        if (error.message.includes('function') && error.message.includes('does not exist')) {
+          return {
+            error: 'Debug function not available',
+            fallback_info: {
+              supabase_url: !!import.meta.env.VITE_SUPABASE_URL,
+              supabase_key: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+              timestamp: new Date().toISOString()
+            }
+          };
+        }
+        
         return { error: error.message };
       }
       
@@ -71,7 +85,10 @@ export class BookmarkService {
       return data;
     } catch (err) {
       console.error('Debug context failed:', err);
-      return { error: 'Debug function not available' };
+      return { 
+        error: 'Debug function call failed',
+        details: err instanceof Error ? err.message : 'Unknown error'
+      };
     }
   }
 
@@ -316,6 +333,21 @@ export class BookmarkService {
     try {
       console.log('🧪 Testing database connection for user:', userId);
       
+      // Test basic Supabase connection first
+      const { error: pingError } = await supabase
+        .from('bookmarks')
+        .select('count', { count: 'exact', head: true })
+        .limit(0);
+      
+      if (pingError) {
+        return {
+          success: false,
+          message: `Database ping failed: ${pingError.message}`
+        };
+      }
+      
+      console.log('✅ Database ping successful');
+      
       // Set user context
       await this.setUserContext(userId);
       
@@ -323,7 +355,7 @@ export class BookmarkService {
       const debug = await this.debugUserContext();
       console.log('Connection test debug:', debug);
       
-      // Try a simple query
+      // Try a user-specific query
       const { data, error } = await supabase
         .from('bookmarks')
         .select('count', { count: 'exact', head: true });
@@ -331,14 +363,14 @@ export class BookmarkService {
       if (error) {
         return {
           success: false,
-          message: `Database query failed: ${error.message}`,
+          message: `User query failed: ${error.message}`,
           debug
         };
       }
       
       return {
         success: true,
-        message: 'Database connection successful',
+        message: `Database connection successful. User context set for ${userId}`,
         debug
       };
       
@@ -348,6 +380,22 @@ export class BookmarkService {
         success: false,
         message: `Connection test failed: ${message}`
       };
+    }
+  }
+
+  /**
+   * Simple test to verify database is accessible
+   */
+  static async testBasicConnection(): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('bookmarks')
+        .select('count', { count: 'exact', head: true })
+        .limit(0);
+      
+      return !error;
+    } catch {
+      return false;
     }
   }
 }

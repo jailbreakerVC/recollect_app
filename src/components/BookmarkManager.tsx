@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug, TestTube } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug, TestTube, Wifi } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { ExtensionService } from '../services/extensionService';
@@ -29,6 +29,7 @@ const BookmarkManager: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
 
   // Initialize extension service and clean up on unmount
   useEffect(() => {
@@ -43,6 +44,20 @@ const BookmarkManager: React.FC = () => {
     };
   }, []);
 
+  // Test database connection on mount
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const isConnected = await BookmarkService.testBasicConnection();
+        setConnectionStatus(isConnected ? 'connected' : 'disconnected');
+      } catch {
+        setConnectionStatus('disconnected');
+      }
+    };
+
+    testConnection();
+  }, []);
+
   // Debug user context in development
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && user) {
@@ -52,6 +67,7 @@ const BookmarkManager: React.FC = () => {
           setDebugInfo(debug);
         } catch (err) {
           console.error('Failed to get debug info:', err);
+          setDebugInfo({ error: 'Failed to get debug info' });
         }
       };
       
@@ -217,14 +233,17 @@ const BookmarkManager: React.FC = () => {
       if (result.success) {
         showSuccess('Connection Test', result.message);
         setDebugInfo(result.debug);
+        setConnectionStatus('connected');
       } else {
         showError('Connection Test Failed', result.message);
         setDebugInfo(result.debug);
+        setConnectionStatus('disconnected');
       }
     } catch (err) {
       removeToast(loadingToastId);
       const message = err instanceof Error ? err.message : 'Connection test failed';
       showError('Connection Test Error', message);
+      setConnectionStatus('disconnected');
     }
   };
 
@@ -258,6 +277,10 @@ const BookmarkManager: React.FC = () => {
                   <div className="flex items-center">
                     <Database className="w-4 h-4 mr-1" />
                     <span>Supabase Database</span>
+                    <div className={`w-2 h-2 rounded-full ml-2 ${
+                      connectionStatus === 'connected' ? 'bg-green-500' :
+                      connectionStatus === 'disconnected' ? 'bg-red-500' : 'bg-yellow-500'
+                    }`} />
                   </div>
                   {extensionAvailable && (
                     <div className="flex items-center text-green-600">
@@ -322,15 +345,37 @@ const BookmarkManager: React.FC = () => {
         {/* Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Database Status */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <div className={`rounded-lg p-6 ${
+            connectionStatus === 'connected' ? 'bg-blue-50 border border-blue-200' :
+            connectionStatus === 'disconnected' ? 'bg-red-50 border border-red-200' :
+            'bg-yellow-50 border border-yellow-200'
+          }`}>
             <div className="flex items-start">
-              <Database className="w-6 h-6 mt-0.5 mr-3 flex-shrink-0 text-blue-600" />
+              <div className="flex items-center">
+                <Database className={`w-6 h-6 mt-0.5 mr-3 flex-shrink-0 ${
+                  connectionStatus === 'connected' ? 'text-blue-600' :
+                  connectionStatus === 'disconnected' ? 'text-red-600' : 'text-yellow-600'
+                }`} />
+                {connectionStatus === 'connected' && <Wifi className="w-4 h-4 text-green-500" />}
+              </div>
               <div>
-                <h3 className="text-lg font-semibold mb-2 text-blue-800">
-                  Database Connected
+                <h3 className={`text-lg font-semibold mb-2 ${
+                  connectionStatus === 'connected' ? 'text-blue-800' :
+                  connectionStatus === 'disconnected' ? 'text-red-800' : 'text-yellow-800'
+                }`}>
+                  Database {connectionStatus === 'connected' ? 'Connected' : 
+                           connectionStatus === 'disconnected' ? 'Disconnected' : 'Checking...'}
                 </h3>
-                <p className="text-blue-700">
-                  Your bookmarks are stored securely in Supabase. Use the refresh button to reload data or sync with Chrome extension.
+                <p className={
+                  connectionStatus === 'connected' ? 'text-blue-700' :
+                  connectionStatus === 'disconnected' ? 'text-red-700' : 'text-yellow-700'
+                }>
+                  {connectionStatus === 'connected' 
+                    ? 'Your bookmarks are stored securely in Supabase. Use the refresh button to reload data or sync with Chrome extension.'
+                    : connectionStatus === 'disconnected'
+                    ? 'Unable to connect to the database. Please check your Supabase configuration.'
+                    : 'Testing database connection...'
+                  }
                 </p>
               </div>
             </div>
@@ -420,6 +465,7 @@ const BookmarkManager: React.FC = () => {
               <div>Loading: {loading ? 'Yes' : 'No'}</div>
               <div>Error: {error || 'None'}</div>
               <div>Sync Status: {syncStatus || 'None'}</div>
+              <div>Connection Status: {connectionStatus}</div>
               {debugInfo && (
                 <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
                   <div className="font-medium mb-1">User Context Debug:</div>
@@ -598,7 +644,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">
