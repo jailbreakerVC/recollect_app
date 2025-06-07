@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, DatabaseBookmark, setAuthContext, getConnectionStatus, reconnectRealtime } from '../lib/supabase';
+import { supabase, DatabaseBookmark, setAuthContext } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface ExtensionBookmark {
   id: string;
@@ -17,12 +16,11 @@ interface UseSupabaseBookmarksReturn {
   loading: boolean;
   error: string | null;
   extensionAvailable: boolean;
-  connectionStatus: string;
   syncWithExtension: () => Promise<void>;
   addBookmark: (title: string, url: string, folder?: string) => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
   updateBookmark: (id: string, updates: Partial<DatabaseBookmark>) => Promise<void>;
-  reconnect: () => void;
+  refreshBookmarks: () => Promise<void>;
 }
 
 export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
@@ -31,18 +29,13 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extensionAvailable, setExtensionAvailable] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
-  const [connectionRetryCount, setConnectionRetryCount] = useState(0);
 
   console.log('🔄 useSupabaseBookmarks hook initialized:', {
     user: user ? { id: user.id, name: user.name } : null,
     bookmarksCount: bookmarks.length,
     loading: loading,
     error: error,
-    extensionAvailable: extensionAvailable,
-    connectionStatus: connectionStatus,
-    retryCount: connectionRetryCount
+    extensionAvailable: extensionAvailable
   });
 
   // Check if extension is available
@@ -180,151 +173,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       setBookmarks([]);
     }
   }, [loadBookmarks, user]);
-
-  // Set up real-time subscription with improved error handling
-  useEffect(() => {
-    if (!user) {
-      // Clean up existing channel if user logs out
-      if (realtimeChannel) {
-        console.log('🧹 Cleaning up existing channel - user logged out');
-        supabase.removeChannel(realtimeChannel);
-        setRealtimeChannel(null);
-        setConnectionStatus('disconnected');
-      }
-      return;
-    }
-
-    console.log('🔄 Setting up Supabase real-time subscription:', {
-      userId: user.id,
-      timestamp: new Date().toISOString()
-    });
-    
-    setConnectionStatus('connecting');
-
-    // Create a unique channel name to avoid conflicts
-    const channelName = `bookmarks_${user.id}_${Date.now()}`;
-    console.log('📡 Creating channel:', channelName);
-    
-    const channel = supabase.channel(channelName, {
-      config: {
-        broadcast: { self: false },
-        presence: { key: user.id },
-        private: false
-      }
-    });
-
-    console.log('📡 Channel created, setting up postgres changes listener...');
-
-    // Set up postgres changes listener
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'bookmarks',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          console.log('🔄 Real-time bookmark change detected:', {
-            eventType: payload.eventType,
-            table: payload.table,
-            schema: payload.schema,
-            new: payload.new,
-            old: payload.old,
-            timestamp: new Date().toISOString()
-          });
-          
-          // Reload bookmarks when changes occur
-          console.log('🔄 Triggering bookmark reload due to real-time change');
-          loadBookmarks();
-        }
-      )
-      .subscribe((status, err) => {
-        console.log('📡 Subscription status changed:', {
-          status: status,
-          error: err,
-          channelName: channelName,
-          timestamp: new Date().toISOString()
-        });
-        
-        setConnectionStatus(status);
-        
-        if (err) {
-          console.error('❌ Subscription error:', {
-            error: err,
-            message: err.message,
-            stack: err.stack,
-            channelName: channelName
-          });
-          setError(`Real-time connection error: ${err.message}`);
-        }
-        
-        switch (status) {
-          case 'SUBSCRIBED':
-            console.log('✅ Successfully subscribed to real-time updates');
-            setError(null);
-            setConnectionRetryCount(0);
-            break;
-          case 'CHANNEL_ERROR':
-            console.error('❌ Channel error occurred');
-            setError('Real-time connection failed. Updates may be delayed.');
-            setConnectionRetryCount(prev => prev + 1);
-            break;
-          case 'TIMED_OUT':
-            console.error('⏰ Subscription timed out');
-            setError('Real-time connection timed out. Retrying...');
-            setConnectionRetryCount(prev => prev + 1);
-            break;
-          case 'CLOSED':
-            console.log('🔒 Subscription closed');
-            setConnectionStatus('disconnected');
-            break;
-          default:
-            console.log('🔄 Connection status:', status);
-        }
-      });
-
-    setRealtimeChannel(channel);
-
-    // Cleanup function
-    return () => {
-      console.log('🧹 Cleaning up real-time subscription:', channelName);
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
-      setRealtimeChannel(null);
-      setConnectionStatus('disconnected');
-    };
-  }, [user, loadBookmarks]);
-
-  // Listen for extension bookmark changes
-  useEffect(() => {
-    console.log('👂 Setting up extension message listener');
-    
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.source === 'bookmark-manager-extension') {
-        console.log('📨 Extension message received:', {
-          event: event.data.event,
-          data: event.data.data,
-          timestamp: new Date().toISOString()
-        });
-        
-        if (event.data.event === 'bookmarkCreated' || 
-            event.data.event === 'bookmarkRemoved' || 
-            event.data.event === 'bookmarkChanged') {
-          console.log('🔄 Extension bookmark change detected, triggering sync');
-          syncWithExtension();
-        }
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => {
-      console.log('🧹 Cleaning up extension message listener');
-      window.removeEventListener('message', handleMessage);
-    };
-  }, []);
 
   const sendMessageToExtension = useCallback((payload: any): Promise<any> => {
     console.log('📤 Sending message to extension:', {
@@ -631,6 +479,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           console.warn('⚠️ Failed to add bookmark to Chrome:', extError);
         }
       }
+
+      // Reload bookmarks to show the new one
+      await loadBookmarks();
     } catch (err) {
       console.error('❌ Add bookmark error:', {
         error: err,
@@ -642,7 +493,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       });
       throw new Error(err instanceof Error ? err.message : 'Failed to add bookmark');
     }
-  }, [user, extensionAvailable, sendMessageToExtension]);
+  }, [user, extensionAvailable, sendMessageToExtension, loadBookmarks]);
 
   const removeBookmark = useCallback(async (id: string) => {
     if (!user) {
@@ -705,6 +556,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           console.warn('⚠️ Failed to remove bookmark from Chrome:', extError);
         }
       }
+
+      // Reload bookmarks to reflect the removal
+      await loadBookmarks();
     } catch (err) {
       console.error('❌ Remove bookmark error:', {
         error: err,
@@ -714,7 +568,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       });
       throw new Error(err instanceof Error ? err.message : 'Failed to remove bookmark');
     }
-  }, [user, extensionAvailable, sendMessageToExtension]);
+  }, [user, extensionAvailable, sendMessageToExtension, loadBookmarks]);
 
   const updateBookmark = useCallback(async (id: string, updates: Partial<DatabaseBookmark>) => {
     if (!user) {
@@ -752,6 +606,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       }
       
       console.log('✅ Bookmark updated successfully:', data);
+
+      // Reload bookmarks to reflect the update
+      await loadBookmarks();
     } catch (err) {
       console.error('❌ Update bookmark error:', {
         error: err,
@@ -762,36 +619,20 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       });
       throw new Error(err instanceof Error ? err.message : 'Failed to update bookmark');
     }
-  }, [user]);
-
-  // Manual reconnect function
-  const reconnect = useCallback(() => {
-    console.log('🔄 Manual reconnect requested');
-    setConnectionRetryCount(0);
-    setError(null);
-    reconnectRealtime();
-    
-    // Also reload bookmarks
-    if (user) {
-      loadBookmarks();
-    }
   }, [user, loadBookmarks]);
 
-  // Auto-sync when extension becomes available
-  useEffect(() => {
-    if (extensionAvailable && user) {
-      console.log('🔄 Extension became available, starting auto-sync');
-      syncWithExtension();
-    }
-  }, [extensionAvailable, user, syncWithExtension]);
+  // Manual refresh function
+  const refreshBookmarks = useCallback(async () => {
+    console.log('🔄 Manual refresh requested');
+    setError(null);
+    await loadBookmarks();
+  }, [loadBookmarks]);
 
   console.log('📊 useSupabaseBookmarks hook state:', {
     bookmarksCount: bookmarks.length,
     loading: loading,
     error: error,
     extensionAvailable: extensionAvailable,
-    connectionStatus: connectionStatus,
-    retryCount: connectionRetryCount,
     user: user ? { id: user.id, name: user.name } : null,
     timestamp: new Date().toISOString()
   });
@@ -801,11 +642,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     loading,
     error,
     extensionAvailable,
-    connectionStatus,
     syncWithExtension,
     addBookmark,
     removeBookmark,
     updateBookmark,
-    reconnect,
+    refreshBookmarks,
   };
 };
