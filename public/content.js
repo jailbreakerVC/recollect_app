@@ -31,11 +31,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Inject a script to detect if extension is available
-const script = document.createElement('script');
-script.textContent = `
-  window.bookmarkExtensionAvailable = true;
-  window.dispatchEvent(new CustomEvent('bookmarkExtensionReady'));
-`;
-document.documentElement.appendChild(script);
-script.remove();
+// Create a function to inject extension availability flag
+function injectExtensionFlag() {
+  // Create a custom event to signal extension is ready
+  const script = document.createElement('script');
+  script.textContent = `
+    (function() {
+      window.bookmarkExtensionAvailable = true;
+      window.dispatchEvent(new CustomEvent('bookmarkExtensionReady', {
+        detail: { timestamp: Date.now() }
+      }));
+    })();
+  `;
+  
+  // Inject into page context
+  (document.head || document.documentElement).appendChild(script);
+  script.remove();
+}
+
+// Inject the flag when content script loads
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', injectExtensionFlag);
+} else {
+  injectExtensionFlag();
+}
