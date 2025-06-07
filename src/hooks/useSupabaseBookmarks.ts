@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, DatabaseBookmark, setAuthContext } from '../lib/supabase';
+import { supabase, DatabaseBookmark, setAuthContext, getConnectionStatus, reconnectRealtime } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -22,6 +22,7 @@ interface UseSupabaseBookmarksReturn {
   addBookmark: (title: string, url: string, folder?: string) => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
   updateBookmark: (id: string, updates: Partial<DatabaseBookmark>) => Promise<void>;
+  reconnect: () => void;
 }
 
 export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
@@ -32,6 +33,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [extensionAvailable, setExtensionAvailable] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
+  const [connectionRetryCount, setConnectionRetryCount] = useState(0);
 
   console.log('🔄 useSupabaseBookmarks hook initialized:', {
     user: user ? { id: user.id, name: user.name } : null,
@@ -39,7 +41,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     loading: loading,
     error: error,
     extensionAvailable: extensionAvailable,
-    connectionStatus: connectionStatus
+    connectionStatus: connectionStatus,
+    retryCount: connectionRetryCount
   });
 
   // Check if extension is available
@@ -178,7 +181,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     }
   }, [loadBookmarks, user]);
 
-  // Set up real-time subscription with proper cleanup
+  // Set up real-time subscription with improved error handling
   useEffect(() => {
     if (!user) {
       // Clean up existing channel if user logs out
@@ -205,7 +208,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     const channel = supabase.channel(channelName, {
       config: {
         broadcast: { self: false },
-        presence: { key: user.id }
+        presence: { key: user.id },
+        private: false
       }
     });
 
@@ -260,14 +264,17 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           case 'SUBSCRIBED':
             console.log('✅ Successfully subscribed to real-time updates');
             setError(null);
+            setConnectionRetryCount(0);
             break;
           case 'CHANNEL_ERROR':
             console.error('❌ Channel error occurred');
             setError('Real-time connection failed. Updates may be delayed.');
+            setConnectionRetryCount(prev => prev + 1);
             break;
           case 'TIMED_OUT':
             console.error('⏰ Subscription timed out');
             setError('Real-time connection timed out. Retrying...');
+            setConnectionRetryCount(prev => prev + 1);
             break;
           case 'CLOSED':
             console.log('🔒 Subscription closed');
@@ -757,6 +764,19 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     }
   }, [user]);
 
+  // Manual reconnect function
+  const reconnect = useCallback(() => {
+    console.log('🔄 Manual reconnect requested');
+    setConnectionRetryCount(0);
+    setError(null);
+    reconnectRealtime();
+    
+    // Also reload bookmarks
+    if (user) {
+      loadBookmarks();
+    }
+  }, [user, loadBookmarks]);
+
   // Auto-sync when extension becomes available
   useEffect(() => {
     if (extensionAvailable && user) {
@@ -771,6 +791,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     error: error,
     extensionAvailable: extensionAvailable,
     connectionStatus: connectionStatus,
+    retryCount: connectionRetryCount,
     user: user ? { id: user.id, name: user.name } : null,
     timestamp: new Date().toISOString()
   });
@@ -785,5 +806,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     addBookmark,
     removeBookmark,
     updateBookmark,
+    reconnect,
   };
 };

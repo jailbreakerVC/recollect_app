@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, Wifi, WifiOff } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, Wifi, WifiOff, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 
@@ -13,7 +13,8 @@ const BookmarkManager: React.FC = () => {
     connectionStatus,
     syncWithExtension,
     addBookmark,
-    removeBookmark
+    removeBookmark,
+    reconnect
   } = useSupabaseBookmarks();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -122,6 +123,10 @@ const BookmarkManager: React.FC = () => {
     }
   };
 
+  const handleReconnect = () => {
+    reconnect();
+  };
+
   if (loading && bookmarks.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
@@ -171,6 +176,16 @@ const BookmarkManager: React.FC = () => {
               <div className="text-sm text-gray-500">
                 {bookmarks.length} bookmarks
               </div>
+              {(connectionStatus === 'CHANNEL_ERROR' || connectionStatus === 'TIMED_OUT' || connectionStatus === 'CLOSED') && (
+                <button
+                  onClick={handleReconnect}
+                  className="inline-flex items-center px-3 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+                  title="Reconnect to real-time updates"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Reconnect
+                </button>
+              )}
               {extensionAvailable && (
                 <button
                   onClick={handleSyncWithExtension}
@@ -209,6 +224,15 @@ const BookmarkManager: React.FC = () => {
                     : `Connection status: ${getConnectionStatusText()}. Manual refresh may be needed.`
                   }
                 </p>
+                {(connectionStatus === 'CHANNEL_ERROR' || connectionStatus === 'TIMED_OUT' || connectionStatus === 'CLOSED') && (
+                  <button
+                    onClick={handleReconnect}
+                    className="mt-3 inline-flex items-center px-3 py-1 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700 transition-colors"
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    Reconnect Now
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -243,6 +267,8 @@ const BookmarkManager: React.FC = () => {
               <div>Connection Status: {connectionStatus}</div>
               <div>Extension Available: {extensionAvailable ? 'Yes' : 'No'}</div>
               <div>Bookmarks Count: {bookmarks.length}</div>
+              <div>Loading: {loading ? 'Yes' : 'No'}</div>
+              <div>Error: {error || 'None'}</div>
             </div>
           </div>
         )}
@@ -257,6 +283,13 @@ const BookmarkManager: React.FC = () => {
                 <p className="text-red-600 text-sm mt-2">
                   Please check your Supabase configuration and ensure your project is active.
                 </p>
+                <button
+                  onClick={handleReconnect}
+                  className="mt-3 inline-flex items-center px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  Try Again
+                </button>
               </div>
             </div>
           </div>
@@ -406,7 +439,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">
