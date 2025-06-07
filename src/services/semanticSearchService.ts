@@ -30,13 +30,6 @@ export class SemanticSearchService {
       userId
     } = options;
 
-    console.log('🔍 Performing semantic search:', {
-      query,
-      userId,
-      similarityThreshold,
-      maxResults
-    });
-
     try {
       const { data, error } = await supabase.rpc('search_bookmarks_semantic', {
         search_query: query.trim(),
@@ -50,17 +43,6 @@ export class SemanticSearchService {
         
         // Fallback to regular text search if semantic search fails
         return this.fallbackTextSearch(query, options);
-      }
-
-      console.log(`✅ Semantic search found ${data?.length || 0} results`);
-      
-      // Log search type distribution
-      if (data && data.length > 0) {
-        const searchTypes = data.reduce((acc: any, result: any) => {
-          acc[result.search_type] = (acc[result.search_type] || 0) + 1;
-          return acc;
-        }, {});
-        console.log('Search type distribution:', searchTypes);
       }
 
       return data || [];
@@ -79,8 +61,6 @@ export class SemanticSearchService {
     query: string,
     options: SearchOptions
   ): Promise<SemanticSearchResult[]> {
-    console.log('🔄 Falling back to text search for query:', query);
-
     try {
       const { data, error } = await supabase
         .from('bookmarks')
@@ -104,7 +84,6 @@ export class SemanticSearchService {
       // Sort by similarity score
       results.sort((a, b) => b.similarity_score - a.similarity_score);
 
-      console.log(`✅ Fallback text search found ${results.length} results`);
       return results;
     } catch (err) {
       console.error('❌ Fallback text search failed:', err);
@@ -142,8 +121,6 @@ export class SemanticSearchService {
    * Update embeddings for a specific user's bookmarks
    */
   static async updateUserEmbeddings(userId: string): Promise<number> {
-    console.log('🔄 Updating embeddings for user:', userId);
-
     try {
       const { data, error } = await supabase.rpc('update_bookmark_embeddings', {
         user_id_param: userId
@@ -155,7 +132,6 @@ export class SemanticSearchService {
       }
 
       const updatedCount = data || 0;
-      console.log(`✅ Updated embeddings for ${updatedCount} bookmarks`);
       
       return updatedCount;
     } catch (err) {
@@ -168,8 +144,6 @@ export class SemanticSearchService {
    * Update embeddings for all bookmarks (admin function)
    */
   static async updateAllEmbeddings(): Promise<number> {
-    console.log('🔄 Updating embeddings for all bookmarks...');
-
     try {
       const { data, error } = await supabase.rpc('update_bookmark_embeddings');
 
@@ -179,7 +153,6 @@ export class SemanticSearchService {
       }
 
       const updatedCount = data || 0;
-      console.log(`✅ Updated embeddings for ${updatedCount} bookmarks globally`);
       
       return updatedCount;
     } catch (err) {
@@ -197,8 +170,6 @@ export class SemanticSearchService {
     sampleResults?: SemanticSearchResult[];
   }> {
     try {
-      console.log('🧪 Testing semantic search functionality...');
-
       // Test with a simple query
       const testQuery = 'github';
       const results = await this.searchBookmarks(testQuery, {

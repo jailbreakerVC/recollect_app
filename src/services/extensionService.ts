@@ -31,8 +31,6 @@ export class ExtensionService {
   static initialize(): void {
     if (this.isInitialized) return;
     
-    console.log('🚀 Initializing ExtensionService');
-    
     // Set up global message listener
     this.globalMessageHandler = this.handleGlobalMessage.bind(this);
     window.addEventListener('message', this.globalMessageHandler);
@@ -44,7 +42,6 @@ export class ExtensionService {
     this.startAvailabilityMonitoring();
     
     this.isInitialized = true;
-    console.log('✅ ExtensionService initialized');
   }
 
   /**
@@ -52,8 +49,6 @@ export class ExtensionService {
    */
   static cleanup(): void {
     if (!this.isInitialized) return;
-    
-    console.log('🧹 Cleaning up ExtensionService');
     
     if (this.globalMessageHandler) {
       window.removeEventListener('message', this.globalMessageHandler);
@@ -71,7 +66,6 @@ export class ExtensionService {
     delete (window as any).notifyExtensionSyncComplete;
     
     this.isInitialized = false;
-    console.log('✅ ExtensionService cleaned up');
   }
 
   /**
@@ -100,7 +94,6 @@ export class ExtensionService {
     const isAvailable = hasExtensionFlag || hasContentScript;
     
     if (isAvailable !== wasAvailable) {
-      console.log('📱 Extension availability changed:', isAvailable);
       (window as any).bookmarkExtensionAvailable = isAvailable;
       
       // Dispatch availability change event
@@ -155,8 +148,6 @@ export class ExtensionService {
       return;
     }
 
-    console.log('📨 ExtensionService received message:', event.data);
-
     // Route to specific handlers
     this.messageHandlers.forEach(handler => {
       try {
@@ -190,11 +181,8 @@ export class ExtensionService {
    * Set up extension availability flag and global functions
    */
   private static setupExtensionFlag(): void {
-    console.log('🔧 Setting up extension communication bridge...');
-    
     // Set up sync completion notification function
     (window as any).notifyExtensionSyncComplete = function(data: any) {
-      console.log('📤 Notifying extension of sync completion:', data);
       window.postMessage({
         source: 'bookmark-manager-webapp',
         type: 'syncComplete',
@@ -206,7 +194,6 @@ export class ExtensionService {
     this.addMessageHandler('connectionTest', (event) => {
       if (event.data.source === 'bookmark-manager-extension' && 
           event.data.event === 'connectionTest') {
-        console.log('🔍 Responding to connection test from extension');
         window.postMessage({
           source: 'bookmark-manager-webapp',
           type: 'connectionTestResponse',
@@ -217,11 +204,8 @@ export class ExtensionService {
 
     // Listen for extension ready events
     window.addEventListener('bookmarkExtensionReady', (event: any) => {
-      console.log('✅ Extension ready event received:', event.detail);
       (window as any).bookmarkExtensionAvailable = true;
     });
-
-    console.log('✅ Extension communication bridge ready');
   }
 
   /**
@@ -242,23 +226,13 @@ export class ExtensionService {
    * Check if Chrome extension is available with enhanced detection
    */
   static isExtensionAvailable(): boolean {
-    const hasFlag = !!(window as any).bookmarkExtensionAvailable;
-    
-    console.log('🔍 Extension availability check:', {
-      hasFlag,
-      windowObject: typeof window !== 'undefined',
-      extensionFlag: (window as any).bookmarkExtensionAvailable
-    });
-    
-    return hasFlag;
+    return !!(window as any).bookmarkExtensionAvailable;
   }
 
   /**
    * Force check extension availability
    */
   static async forceCheckAvailability(): Promise<boolean> {
-    console.log('🔍 Force checking extension availability...');
-    
     return new Promise((resolve) => {
       let responseReceived = false;
       
@@ -267,7 +241,6 @@ export class ExtensionService {
           responseReceived = true;
           (window as any).bookmarkExtensionAvailable = true;
           window.removeEventListener('message', testHandler);
-          console.log('✅ Extension responded to availability check');
           resolve(true);
         }
       };
@@ -285,7 +258,6 @@ export class ExtensionService {
       setTimeout(() => {
         window.removeEventListener('message', testHandler);
         if (!responseReceived) {
-          console.log('⚠️ Extension did not respond to availability check');
           (window as any).bookmarkExtensionAvailable = false;
           resolve(false);
         }
@@ -305,8 +277,6 @@ export class ExtensionService {
 
       const requestId = `req_${++this.requestId}_${Date.now()}`;
       
-      console.log('📤 Sending message to extension:', { requestId, payload });
-      
       let responseReceived = false;
       let timeoutId: NodeJS.Timeout;
       
@@ -317,8 +287,6 @@ export class ExtensionService {
           responseReceived = true;
           clearTimeout(timeoutId);
           this.removeMessageHandler(`response_${requestId}`);
-          
-          console.log('📨 Extension response received:', event.data);
           
           if (event.data.response?.success) {
             resolve(event.data.response);
@@ -338,8 +306,6 @@ export class ExtensionService {
           requestId,
           payload
         }, window.location.origin);
-        
-        console.log('📤 Message posted to window');
       } catch (error) {
         this.removeMessageHandler(`response_${requestId}`);
         reject(new Error(`Failed to send message: ${error}`));
@@ -350,7 +316,6 @@ export class ExtensionService {
       timeoutId = setTimeout(() => {
         if (!responseReceived) {
           this.removeMessageHandler(`response_${requestId}`);
-          console.error('⏰ Extension request timeout for:', payload.action);
           reject(new Error(`Extension request timeout (${timeout}ms) for action: ${payload.action}`));
         }
       }, timeout);
@@ -361,13 +326,9 @@ export class ExtensionService {
    * Get all bookmarks from Chrome extension with retry logic
    */
   static async getBookmarks(): Promise<ExtensionBookmark[]> {
-    console.log('📚 Requesting bookmarks from Chrome extension...');
-    
     try {
       const response = await this.sendMessage({ action: 'getBookmarks' }, 15000); // 15 second timeout
       const bookmarks = response.bookmarks || [];
-      
-      console.log(`✅ Received ${bookmarks.length} bookmarks from extension`);
       
       // Validate bookmark structure
       const validBookmarks = bookmarks.filter((bookmark: any) => {
@@ -376,14 +337,14 @@ export class ExtensionService {
                        typeof bookmark.title === 'string' && 
                        typeof bookmark.url === 'string';
         
-        if (!isValid) {
+        if (!isValid && process.env.NODE_ENV === 'development') {
           console.warn('⚠️ Invalid bookmark structure:', bookmark);
         }
         
         return isValid;
       });
       
-      if (validBookmarks.length !== bookmarks.length) {
+      if (validBookmarks.length !== bookmarks.length && process.env.NODE_ENV === 'development') {
         console.warn(`⚠️ Filtered out ${bookmarks.length - validBookmarks.length} invalid bookmarks`);
       }
       
@@ -398,8 +359,6 @@ export class ExtensionService {
    * Add bookmark to Chrome
    */
   static async addBookmark(title: string, url: string, parentId?: string): Promise<void> {
-    console.log('➕ Adding bookmark to Chrome:', { title, url, parentId });
-    
     try {
       await this.sendMessage({
         action: 'addBookmark',
@@ -407,8 +366,6 @@ export class ExtensionService {
         url,
         parentId
       }, 10000);
-      
-      console.log('✅ Bookmark added to Chrome successfully');
     } catch (error) {
       console.error('❌ Failed to add bookmark to Chrome:', error);
       throw error;
@@ -419,15 +376,11 @@ export class ExtensionService {
    * Remove bookmark from Chrome
    */
   static async removeBookmark(chromeBookmarkId: string): Promise<void> {
-    console.log('🗑️ Removing bookmark from Chrome:', chromeBookmarkId);
-    
     try {
       await this.sendMessage({
         action: 'removeBookmark',
         id: chromeBookmarkId
       }, 10000);
-      
-      console.log('✅ Bookmark removed from Chrome successfully');
     } catch (error) {
       console.error('❌ Failed to remove bookmark from Chrome:', error);
       throw error;
@@ -438,8 +391,6 @@ export class ExtensionService {
    * Set up extension event listeners for bookmark changes
    */
   static setupEventListeners(onBookmarkChange: (event?: string) => void): () => void {
-    console.log('👂 Setting up extension event listeners');
-    
     const handlerId = `bookmarkEvents_${Date.now()}`;
     
     const handleBookmarkEvent = (event: MessageEvent) => {
@@ -447,7 +398,6 @@ export class ExtensionService {
         const { event: eventType } = event.data;
         
         if (['bookmarkCreated', 'bookmarkRemoved', 'bookmarkChanged', 'syncRequested'].includes(eventType)) {
-          console.log('🔄 Triggering bookmark change handler for:', eventType);
           onBookmarkChange(eventType);
         }
       }
@@ -457,7 +407,6 @@ export class ExtensionService {
     
     // Return cleanup function
     return () => {
-      console.log('🧹 Cleaning up extension event listeners');
       this.removeMessageHandler(handlerId);
     };
   }
@@ -466,8 +415,6 @@ export class ExtensionService {
    * Set up extension availability detection with improved reliability
    */
   static setupAvailabilityDetection(onAvailabilityChange: (available: boolean) => void): () => void {
-    console.log('🔍 Setting up extension availability detection');
-    
     let lastAvailability = false;
     let intervalId: NodeJS.Timeout;
     
@@ -476,20 +423,17 @@ export class ExtensionService {
       const available = await this.forceCheckAvailability();
       
       if (available !== lastAvailability) {
-        console.log('📱 Extension availability changed:', available);
         lastAvailability = available;
         onAvailabilityChange(available);
       }
     };
 
     const handleExtensionReady = (event: CustomEvent) => {
-      console.log('✅ Extension ready event received:', event.detail);
       (window as any).bookmarkExtensionAvailable = true;
       onAvailabilityChange(true);
     };
 
     const handleAvailabilityChange = (event: CustomEvent) => {
-      console.log('📱 Extension availability change event:', event.detail);
       onAvailabilityChange(event.detail.available);
     };
 
@@ -510,7 +454,6 @@ export class ExtensionService {
 
     // Return cleanup function
     return () => {
-      console.log('🧹 Cleaning up extension availability detection');
       window.removeEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
       window.removeEventListener('extensionAvailabilityChanged', handleAvailabilityChange as EventListener);
       clearInterval(intervalId);
@@ -522,11 +465,8 @@ export class ExtensionService {
    */
   static async testConnection(): Promise<{ success: boolean; message: string }> {
     try {
-      console.log('🧪 Testing extension connection...');
-      
       // First check if extension flag is set
       if (!(window as any).bookmarkExtensionAvailable) {
-        console.log('🔍 Extension flag not set, trying force check...');
         const available = await this.forceCheckAvailability();
         
         if (!available) {
