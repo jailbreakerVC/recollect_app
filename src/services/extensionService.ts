@@ -24,6 +24,7 @@ export class ExtensionService {
   private static isInitialized = false;
   private static globalMessageHandler: ((event: MessageEvent) => void) | null = null;
   private static availabilityCheckInterval: NodeJS.Timeout | null = null;
+  private static lastAvailabilityCheck = 0;
 
   /**
    * Initialize the extension service
@@ -38,7 +39,7 @@ export class ExtensionService {
     // Set up extension availability flag
     this.setupExtensionFlag();
     
-    // Start availability monitoring
+    // Start availability monitoring (less frequent)
     this.startAvailabilityMonitoring();
     
     this.isInitialized = true;
@@ -69,29 +70,35 @@ export class ExtensionService {
   }
 
   /**
-   * Start monitoring extension availability
+   * Start monitoring extension availability (less frequent)
    */
   private static startAvailabilityMonitoring(): void {
     // Check immediately
     this.checkExtensionAvailability();
     
-    // Check every 2 seconds
+    // Check every 10 seconds instead of 2 seconds
     this.availabilityCheckInterval = setInterval(() => {
       this.checkExtensionAvailability();
-    }, 2000);
+    }, 10000);
   }
 
   /**
-   * Check if extension is available and update flag
+   * Check if extension is available (cached for 5 seconds)
    */
   private static checkExtensionAvailability(): void {
+    const now = Date.now();
+    
+    // Only check every 5 seconds to reduce noise
+    if (now - this.lastAvailabilityCheck < 5000) {
+      return;
+    }
+    
+    this.lastAvailabilityCheck = now;
+    
     const wasAvailable = (window as any).bookmarkExtensionAvailable;
     
-    // Check multiple indicators
-    const hasExtensionFlag = !!(window as any).bookmarkExtensionAvailable;
-    const hasContentScript = this.testContentScriptPresence();
-    
-    const isAvailable = hasExtensionFlag || hasContentScript;
+    // Check if extension flag is set
+    const isAvailable = !!(window as any).bookmarkExtensionAvailable;
     
     if (isAvailable !== wasAvailable) {
       (window as any).bookmarkExtensionAvailable = isAvailable;
@@ -104,47 +111,17 @@ export class ExtensionService {
   }
 
   /**
-   * Test if content script is present by trying to communicate
-   */
-  private static testContentScriptPresence(): boolean {
-    try {
-      // Try to send a test message and see if we get a response quickly
-      let responseReceived = false;
-      
-      const testHandler = (event: MessageEvent) => {
-        if (event.data.source === 'bookmark-manager-extension' && 
-            event.data.event === 'connectionTest') {
-          responseReceived = true;
-          window.removeEventListener('message', testHandler);
-        }
-      };
-      
-      window.addEventListener('message', testHandler);
-      
-      // Send test message
-      window.postMessage({
-        source: 'bookmark-manager-webapp',
-        type: 'extensionTest',
-        timestamp: Date.now()
-      }, window.location.origin);
-      
-      // Clean up after a short time
-      setTimeout(() => {
-        window.removeEventListener('message', testHandler);
-      }, 500);
-      
-      return responseReceived;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
    * Global message handler that routes messages to appropriate handlers
    */
   private static handleGlobalMessage(event: MessageEvent): void {
-    // Filter out non-bookmark manager messages
+    // Filter out non-bookmark manager messages and test messages
     if (!this.isBookmarkManagerMessage(event.data)) {
+      return;
+    }
+
+    // Handle availability responses silently
+    if (event.data.type === 'availabilityResponse') {
+      (window as any).bookmarkExtensionAvailable = event.data.available;
       return;
     }
 
@@ -223,45 +200,46 @@ export class ExtensionService {
   }
 
   /**
-   * Check if Chrome extension is available with enhanced detection
+   * Check if Chrome extension is available
    */
   static isExtensionAvailable(): boolean {
     return !!(window as any).bookmarkExtensionAvailable;
   }
 
   /**
-   * Force check extension availability
+   * Force check extension availability with silent communication
    */
   static async forceCheckAvailability(): Promise<boolean> {
     return new Promise((resolve) => {
       let responseReceived = false;
       
       const testHandler = (event: MessageEvent) => {
-        if (event.data.source === 'bookmark-manager-extension') {
+        if (event.data.source === 'bookmark-manager-extension' && 
+            event.data.type === 'availabilityResponse') {
           responseReceived = true;
-          (window as any).bookmarkExtensionAvailable = true;
+          (window as any).bookmarkExtensionAvailable = event.data.available;
           window.removeEventListener('message', testHandler);
-          resolve(true);
+          resolve(event.data.available);
         }
       };
       
       window.addEventListener('message', testHandler);
       
-      // Send test message
+      // Send availability check (this will be handled silently by content script)
       window.postMessage({
         source: 'bookmark-manager-webapp',
         type: 'availabilityCheck',
         timestamp: Date.now()
       }, window.location.origin);
       
-      // Timeout after 2 seconds
+      // Timeout after 1 second
       setTimeout(() => {
         window.removeEventListener('message', testHandler);
         if (!responseReceived) {
           (window as any).bookmarkExtensionAvailable = false;
           resolve(false);
         }
-      }, 2000);
+      }, 1000);
     });
   }
 
@@ -337,16 +315,8 @@ export class ExtensionService {
                        typeof bookmark.title === 'string' && 
                        typeof bookmark.url === 'string';
         
-        if (!isValid && process.env.NODE_ENV === 'development') {
-          console.warn('⚠️ Invalid bookmark structure:', bookmark);
-        }
-        
         return isValid;
       });
-      
-      if (validBookmarks.length !== bookmarks.length && process.env.NODE_ENV === 'development') {
-        console.warn(`⚠️ Filtered out ${bookmarks.length - validBookmarks.length} invalid bookmarks`);
-      }
       
       return validBookmarks;
     } catch (error) {
@@ -419,7 +389,7 @@ export class ExtensionService {
     let intervalId: NodeJS.Timeout;
     
     const checkAvailability = async () => {
-      // Force check availability
+      // Force check availability (now silent)
       const available = await this.forceCheckAvailability();
       
       if (available !== lastAvailability) {
@@ -449,8 +419,8 @@ export class ExtensionService {
     window.addEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
     window.addEventListener('extensionAvailabilityChanged', handleAvailabilityChange as EventListener);
 
-    // Check periodically with force check
-    intervalId = setInterval(checkAvailability, 5000);
+    // Check periodically with force check (less frequent)
+    intervalId = setInterval(checkAvailability, 8000);
 
     // Return cleanup function
     return () => {
