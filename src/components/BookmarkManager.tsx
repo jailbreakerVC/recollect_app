@@ -3,6 +3,7 @@ import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCi
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { ExtensionService } from '../services/extensionService';
+import { ToastContainer, useToast } from './Toast';
 
 const BookmarkManager: React.FC = () => {
   const { user } = useAuth();
@@ -18,6 +19,8 @@ const BookmarkManager: React.FC = () => {
     syncStatus,
     lastSyncResult
   } = useSupabaseBookmarks();
+
+  const { toasts, removeToast, showSuccess, showError, showLoading, updateToast } = useToast();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
@@ -76,41 +79,98 @@ const BookmarkManager: React.FC = () => {
     e.preventDefault();
     if (!newBookmark.title || !newBookmark.url) return;
 
+    const loadingToastId = showLoading('Adding Bookmark', 'Creating new bookmark...');
+
     try {
       await addBookmark(
         newBookmark.title, 
         newBookmark.url, 
         newBookmark.folder || undefined
       );
+      
+      removeToast(loadingToastId);
+      showSuccess('Bookmark Added', `"${newBookmark.title}" has been added successfully`);
+      
       setNewBookmark({ title: '', url: '', folder: '' });
       setShowAddForm(false);
     } catch (err) {
+      removeToast(loadingToastId);
+      const message = err instanceof Error ? err.message : 'Failed to add bookmark';
+      showError('Add Failed', message);
       console.error('Failed to add bookmark:', err);
     }
   };
 
   const handleRemoveBookmark = async (id: string) => {
-    if (window.confirm('Are you sure you want to remove this bookmark?')) {
+    const bookmark = bookmarks.find(b => b.id === id);
+    if (!bookmark) return;
+
+    if (window.confirm(`Are you sure you want to remove "${bookmark.title}"?`)) {
+      const loadingToastId = showLoading('Removing Bookmark', 'Deleting bookmark...');
+
       try {
         await removeBookmark(id);
+        removeToast(loadingToastId);
+        showSuccess('Bookmark Removed', `"${bookmark.title}" has been removed`);
       } catch (err) {
+        removeToast(loadingToastId);
+        const message = err instanceof Error ? err.message : 'Failed to remove bookmark';
+        showError('Remove Failed', message);
         console.error('Failed to remove bookmark:', err);
       }
     }
   };
 
   const handleSyncWithExtension = async () => {
+    if (!extensionAvailable) {
+      showError('Extension Not Available', 'Chrome extension is not installed or not responding');
+      return;
+    }
+
+    const loadingToastId = showLoading('Syncing Bookmarks', 'Checking for changes...');
+
     try {
-      await syncWithExtension();
+      const result = await syncWithExtension((status) => {
+        updateToast(loadingToastId, { 
+          title: 'Syncing Bookmarks', 
+          message: status 
+        });
+      });
+      
+      removeToast(loadingToastId);
+      
+      if (result.hasChanges) {
+        const changes = [];
+        if (result.inserted > 0) changes.push(`${result.inserted} added`);
+        if (result.updated > 0) changes.push(`${result.updated} updated`);
+        if (result.removed > 0) changes.push(`${result.removed} removed`);
+        
+        showSuccess(
+          'Sync Complete', 
+          `Successfully synced ${result.total} bookmarks. Changes: ${changes.join(', ')}`
+        );
+      } else {
+        showSuccess('Sync Complete', 'Your bookmarks are already up to date');
+      }
     } catch (err) {
-      console.error('Failed to sync with extension:', err);
+      removeToast(loadingToastId);
+      const message = err instanceof Error ? err.message : 'Failed to sync with extension';
+      showError('Sync Failed', message);
+      console.error('Sync failed:', err);
     }
   };
 
   const handleRefresh = async () => {
+    const loadingToastId = showLoading('Refreshing', 'Loading bookmarks from database...');
+
     try {
       await refreshBookmarks();
+      removeToast(loadingToastId);
+      showSuccess('Refreshed', 'Bookmarks reloaded from database');
     } catch (err) {
+      removeToast(loadingToastId);
+      const message = err instanceof Error ? err.message : 'Failed to refresh bookmarks';
+      showError('Refresh Failed', message);
       console.error('Failed to refresh bookmarks:', err);
     }
   };
@@ -128,6 +188,9 @@ const BookmarkManager: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} onClose={removeToast} />
+
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -448,7 +511,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">

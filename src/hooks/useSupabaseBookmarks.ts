@@ -10,7 +10,7 @@ interface UseSupabaseBookmarksReturn {
   loading: boolean;
   error: string | null;
   extensionAvailable: boolean;
-  syncWithExtension: () => Promise<void>;
+  syncWithExtension: (onProgress?: (status: string) => void) => Promise<SyncResult>;
   addBookmark: (title: string, url: string, folder?: string) => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
   updateBookmark: (id: string, updates: Partial<DatabaseBookmark>) => Promise<void>;
@@ -129,32 +129,43 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   }, [loadBookmarks, user]);
 
   // Sync with Chrome extension
-  const syncWithExtension = useCallback(async () => {
-    if (!user || !extensionAvailable) return;
+  const syncWithExtension = useCallback(async (onProgress?: (status: string) => void): Promise<SyncResult> => {
+    if (!user || !extensionAvailable) {
+      throw new Error('Extension not available or user not logged in');
+    }
 
     setLoading(true);
     setError(null);
     setSyncStatus('Checking for changes...');
+    onProgress?.('Checking for changes...');
 
     try {
       const result = await SyncService.syncWithExtension(user.id, (status) => {
         setSyncStatus(status);
+        onProgress?.(status);
       });
       
       setLastSyncResult(result);
       
       if (result.hasChanges) {
         await loadBookmarks(); // Refresh if there were changes
-        setSyncStatus(`Synced: +${result.inserted} -${result.removed} ~${result.updated}`);
+        const statusMessage = `Synced: +${result.inserted} -${result.removed} ~${result.updated}`;
+        setSyncStatus(statusMessage);
+        onProgress?.(statusMessage);
       } else {
         setSyncStatus('Already up to date');
+        onProgress?.('Already up to date');
       }
+      
+      return result;
       
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to sync with extension';
       setError(message);
       setSyncStatus('Sync failed');
+      onProgress?.('Sync failed');
       console.error('Sync failed:', err);
+      throw err;
     } finally {
       setLoading(false);
       // Clear sync status after 3 seconds
