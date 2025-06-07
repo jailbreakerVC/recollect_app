@@ -28,7 +28,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       eventsPerSecond: 5, // Conservative rate limiting
     },
     heartbeatIntervalMs: 30000, // 30 seconds
-    reconnectAfterMs: (tries: number) => Math.min(tries * 1000, 10000), // Exponential backoff up to 10s
+    reconnectAfterMs: (tries: number) => Math.min(tries * 2000, 30000), // Exponential backoff up to 30s
     timeout: 20000, // 20 second timeout
   },
   auth: {
@@ -44,8 +44,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Connection monitoring state
 let globalConnectionRetries = 0;
-const maxGlobalRetries = 5;
+const maxGlobalRetries = 3; // Reduced from 5
 let connectionMonitoringActive = false;
+let monitorChannel: any = null;
+let reconnectionTimeout: NodeJS.Timeout | null = null;
 
 // Monitor realtime connection status using current v2 API
 const monitorConnection = () => {
@@ -58,7 +60,7 @@ const monitorConnection = () => {
   connectionMonitoringActive = true;
   
   // Create a monitoring channel to track connection state
-  const monitorChannel = supabase.channel('connection-monitor', {
+  monitorChannel = supabase.channel('connection-monitor', {
     config: {
       broadcast: { self: false },
       presence: { key: 'monitor' }
@@ -66,7 +68,7 @@ const monitorConnection = () => {
   });
 
   monitorChannel
-    .subscribe((status, err) => {
+    .subscribe((status: string, err?: any) => {
       console.log('📡 Connection monitor status changed:', {
         status: status,
         error: err,
@@ -78,21 +80,29 @@ const monitorConnection = () => {
         case 'SUBSCRIBED':
           console.log('✅ Realtime connection established successfully');
           globalConnectionRetries = 0; // Reset retry counter on successful connection
+          // Clear any pending reconnection attempts
+          if (reconnectionTimeout) {
+            clearTimeout(reconnectionTimeout);
+            reconnectionTimeout = null;
+          }
           break;
           
         case 'CHANNEL_ERROR':
           console.error('❌ Realtime channel error occurred:', err);
-          handleConnectionError(err);
+          // Don't auto-reconnect on channel errors - let user manually reconnect
           break;
           
         case 'TIMED_OUT':
           console.warn('⏰ Realtime connection timed out');
-          handleConnectionTimeout();
+          // Don't auto-reconnect on timeout - let user manually reconnect
           break;
           
         case 'CLOSED':
           console.warn('🔒 Realtime connection closed');
-          handleConnectionClosed();
+          // Only auto-reconnect if this wasn't a manual disconnection
+          if (connectionMonitoringActive && globalConnectionRetries === 0) {
+            handleConnectionClosed();
+          }
           break;
           
         case 'CONNECTING':
@@ -105,50 +115,57 @@ const monitorConnection = () => {
     });
 };
 
-const handleConnectionError = (error: any) => {
-  console.error('❌ Realtime connection error:', {
-    error: error,
-    message: error?.message,
-    type: error?.type,
-    retries: globalConnectionRetries
-  });
-  
-  attemptReconnection('error');
-};
-
-const handleConnectionTimeout = () => {
-  console.warn('⏰ Realtime connection timeout:', {
-    retries: globalConnectionRetries,
-    timestamp: new Date().toISOString()
-  });
-  
-  attemptReconnection('timeout');
-};
-
 const handleConnectionClosed = () => {
-  console.warn('🔒 Realtime connection closed:', {
+  console.warn('🔒 Realtime connection closed unexpectedly:', {
     retries: globalConnectionRetries,
     timestamp: new Date().toISOString()
   });
   
-  attemptReconnection('closed');
+  // Only attempt reconnection if we haven't exceeded max retries
+  if (globalConnectionRetries < maxGlobalRetries) {
+    attemptReconnection('closed');
+  } else {
+    console.error('❌ Max reconnection attempts reached. Manual reconnection required.');
+    connectionMonitoringActive = false;
+  }
 };
 
 const attemptReconnection = (reason: string) => {
-  if (globalConnectionRetries < maxGlobalRetries) {
-    globalConnectionRetries++;
-    const delay = Math.min(globalConnectionRetries * 2000, 10000); // Exponential backoff
-    
-    console.log(`🔄 Attempting to reconnect due to ${reason} in ${delay}ms (attempt ${globalConnectionRetries}/${maxGlobalRetries})`);
-    
-    setTimeout(() => {
-      console.log('🔄 Executing reconnection attempt...');
-      reconnectRealtime();
-    }, delay);
-  } else {
+  if (globalConnectionRetries >= maxGlobalRetries) {
     console.error('❌ Max reconnection attempts reached. Realtime features may be unavailable.');
-    console.error('💡 Try refreshing the page or check your network connection.');
+    console.error('💡 Try using the reconnect button or refresh the page.');
+    connectionMonitoringActive = false;
+    return;
   }
+
+  globalConnectionRetries++;
+  const delay = Math.min(globalConnectionRetries * 5000, 30000); // 5s, 10s, 15s, max 30s
+  
+  console.log(`🔄 Attempting to reconnect due to ${reason} in ${delay}ms (attempt ${globalConnectionRetries}/${maxGlobalRetries})`);
+  
+  // Clear any existing timeout
+  if (reconnectionTimeout) {
+    clearTimeout(reconnectionTimeout);
+  }
+  
+  reconnectionTimeout = setTimeout(() => {
+    console.log('🔄 Executing reconnection attempt...');
+    reconnectionTimeout = null;
+    
+    // Clean up current monitor before reconnecting
+    if (monitorChannel) {
+      console.log('🧹 Cleaning up existing monitor channel...');
+      supabase.removeChannel(monitorChannel);
+      monitorChannel = null;
+    }
+    
+    connectionMonitoringActive = false;
+    
+    // Restart monitoring
+    setTimeout(() => {
+      monitorConnection();
+    }, 1000);
+  }, delay);
 };
 
 // Initialize connection monitoring
@@ -290,7 +307,16 @@ export const getConnectionStatus = () => {
 // Export a helper function to manually reconnect
 export const reconnectRealtime = () => {
   console.log('🔄 Manual realtime reconnection requested...');
-  globalConnectionRetries = 0; // Reset retry counter
+  
+  // Clear any pending automatic reconnection
+  if (reconnectionTimeout) {
+    console.log('🧹 Clearing pending reconnection timeout...');
+    clearTimeout(reconnectionTimeout);
+    reconnectionTimeout = null;
+  }
+  
+  // Reset retry counter for manual reconnection
+  globalConnectionRetries = 0;
   
   try {
     // Remove all existing channels
@@ -302,6 +328,9 @@ export const reconnectRealtime = () => {
       supabase.removeChannel(channel);
     });
     
+    // Clean up monitor channel reference
+    monitorChannel = null;
+    
     console.log('✅ All channels removed, ready for fresh connections');
     
     // Reset connection monitoring
@@ -311,7 +340,7 @@ export const reconnectRealtime = () => {
     setTimeout(() => {
       console.log('🔄 Restarting connection monitoring...');
       monitorConnection();
-    }, 1000);
+    }, 2000); // Increased delay to prevent rapid cycling
     
   } catch (error) {
     console.error('❌ Error during manual reconnection:', {
@@ -333,6 +362,22 @@ export const getDetailedConnectionInfo = () => {
     })),
     retries: globalConnectionRetries,
     maxRetries: maxGlobalRetries,
-    monitoringActive: connectionMonitoringActive
+    monitoringActive: connectionMonitoringActive,
+    hasPendingReconnection: !!reconnectionTimeout
   };
+};
+
+// Export function to stop all reconnection attempts
+export const stopReconnectionAttempts = () => {
+  console.log('🛑 Stopping all reconnection attempts...');
+  
+  if (reconnectionTimeout) {
+    clearTimeout(reconnectionTimeout);
+    reconnectionTimeout = null;
+  }
+  
+  connectionMonitoringActive = false;
+  globalConnectionRetries = maxGlobalRetries; // Set to max to prevent further attempts
+  
+  console.log('✅ Reconnection attempts stopped');
 };
