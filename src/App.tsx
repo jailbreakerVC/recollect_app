@@ -2,6 +2,7 @@ import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Landing from './components/Landing';
 import Dashboard from './components/Dashboard';
+import BookmarkManager from './components/BookmarkManager';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -17,7 +18,18 @@ const AppContent: React.FC = () => {
     );
   }
 
-  return user ? <Dashboard /> : <Landing />;
+  // Simple routing based on hash
+  const currentHash = window.location.hash;
+  
+  if (!user) {
+    return <Landing />;
+  }
+
+  if (currentHash === '#bookmarks') {
+    return <BookmarkManager />;
+  }
+
+  return <Dashboard />;
 };
 
 function App() {

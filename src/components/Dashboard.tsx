@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, User, Mail, Shield, Clock, CheckCircle } from 'lucide-react';
+import { LogOut, User, Mail, Shield, Clock, CheckCircle, Bookmark } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Dashboard: React.FC = () => {
@@ -11,6 +11,12 @@ const Dashboard: React.FC = () => {
     if (window.confirm('Are you sure you want to sign out?')) {
       logout();
     }
+  };
+
+  const handleViewBookmarks = () => {
+    // Navigate to bookmarks - in a real app this would use React Router
+    window.location.hash = '#bookmarks';
+    window.location.reload();
   };
 
   return (
@@ -149,7 +155,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Security Features */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-8">
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-8 mb-12">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full mb-4">
               <Shield className="w-8 h-8 text-white" />
@@ -180,10 +186,14 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Quick Actions */}
-        <div className="mt-12 text-center">
+        <div className="text-center">
           <div className="inline-flex space-x-4">
-            <button className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-              Access Dashboard
+            <button 
+              onClick={handleViewBookmarks}
+              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center"
+            >
+              <Bookmark className="w-5 h-5 mr-2" />
+              View Bookmarks
             </button>
             
             <button className="px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-colors duration-200">
