@@ -20,11 +20,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Please check your .env file.');
 }
 
-console.log('🚀 Initializing Supabase client (realtime disabled)...');
+console.log('🚀 Initializing Supabase client (simplified mode)...');
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false, // We're handling our own auth
+    persistSession: false,
     autoRefreshToken: false,
   },
   global: {
@@ -82,94 +82,14 @@ export interface DatabaseBookmark {
   updated_at: string;
 }
 
-// Set custom auth context for RLS - with fallback for missing functions
+// Simplified auth context - no longer needed with RLS disabled
 export const setAuthContext = async (userId: string) => {
-  console.log('🔑 Setting auth context for user:', userId);
-  
-  try {
-    console.log('📞 Calling set_user_context RPC function...');
-    
-    const { data, error } = await supabase.rpc('set_user_context', { user_id: userId });
-    
-    if (error) {
-      console.error('❌ RPC set_user_context failed:', {
-        error: error,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-        userId: userId
-      });
-      
-      // If the function doesn't exist, we'll work without it
-      if (error.code === 'PGRST202') {
-        console.warn('⚠️ RPC function not found, continuing without user context. RLS policies may not work correctly.');
-        return { data: null, error: null }; // Don't treat this as a fatal error
-      }
-    } else {
-      console.log('✅ Auth context set successfully:', {
-        userId: userId,
-        data: data,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    return { data, error };
-  } catch (err) {
-    console.error('❌ Exception in setAuthContext:', {
-      error: err,
-      message: err instanceof Error ? err.message : 'Unknown error',
-      userId: userId,
-      stack: err instanceof Error ? err.stack : undefined
-    });
-    
-    console.warn('⚠️ RPC set_user_context not available, using direct queries');
-    return { data: null, error: null }; // Don't treat this as a fatal error
-  }
+  console.log('🔑 Auth context simplified (RLS disabled):', userId);
+  return { data: null, error: null };
 };
 
-// Debug function to help troubleshoot auth issues
+// Debug function - simplified
 export const debugAuthContext = async () => {
-  console.log('🔍 Getting auth debug information...');
-  
-  try {
-    const { data, error } = await supabase.rpc('debug_auth_context');
-    
-    if (error) {
-      console.error('❌ Debug auth context failed:', error);
-      return { data: null, error };
-    }
-    
-    console.log('🔍 Auth debug info:', data);
-    return { data, error: null };
-  } catch (err) {
-    console.error('❌ Debug auth context exception:', err);
-    return { data: null, error: err };
-  }
+  console.log('🔍 Auth debug (RLS disabled)');
+  return { data: { mode: 'rls_disabled' }, error: null };
 };
-
-// Test RPC function availability
-console.log('🧪 Testing RPC function availability...');
-supabase.rpc('get_current_user_id').then(({ data, error }) => {
-  if (error) {
-    console.warn('⚠️ RPC get_current_user_id test failed:', {
-      error: error,
-      message: error.message,
-      code: error.code
-    });
-    
-    if (error.code === 'PGRST202') {
-      console.warn('⚠️ RPC functions not available. You may need to run the migration to create them.');
-    }
-  } else {
-    console.log('✅ RPC functions are available:', {
-      currentUserId: data,
-      timestamp: new Date().toISOString()
-    });
-  }
-}).catch(err => {
-  console.warn('⚠️ RPC test threw exception:', {
-    error: err,
-    message: err.message
-  });
-});

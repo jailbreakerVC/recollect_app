@@ -30,7 +30,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [error, setError] = useState<string | null>(null);
   const [extensionAvailable, setExtensionAvailable] = useState(false);
 
-  console.log('🔄 useSupabaseBookmarks hook initialized:', {
+  console.log('🔄 useSupabaseBookmarks hook initialized (simplified):', {
     user: user ? { id: user.id, name: user.name } : null,
     bookmarksCount: bookmarks.length,
     loading: loading,
@@ -66,51 +66,19 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     };
   }, []);
 
-  // Set auth context when user changes
-  useEffect(() => {
-    if (user?.id) {
-      console.log('👤 User changed, setting auth context:', {
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email
-      });
-      
-      setAuthContext(user.id).then(({ data, error }) => {
-        if (error) {
-          console.error('❌ Failed to set auth context:', error);
-        } else {
-          console.log('✅ Auth context set for user:', user.id);
-        }
-      });
-    } else {
-      console.log('👤 No user, skipping auth context setup');
-    }
-  }, [user?.id]);
-
-  // Load bookmarks from Supabase
+  // Load bookmarks from Supabase (simplified - no auth context needed)
   const loadBookmarks = useCallback(async () => {
     if (!user) {
       console.log('👤 No user, skipping bookmark load');
       return;
     }
 
-    console.log('📚 Starting bookmark load for user:', user.id);
+    console.log('📚 Starting simplified bookmark load for user:', user.id);
     setLoading(true);
     setError(null);
 
     try {
-      console.log('🔑 Setting auth context before query...');
-      const authResult = await setAuthContext(user.id);
-      
-      if (authResult.error) {
-        console.warn('⚠️ Auth context setup had issues, continuing anyway:', authResult.error);
-      }
-
-      // Debug auth context
-      const debugResult = await debugAuthContext();
-      console.log('🔍 Auth debug result:', debugResult);
-      
-      console.log('📊 Executing Supabase query:', {
+      console.log('📊 Executing simplified Supabase query:', {
         table: 'bookmarks',
         filter: `user_id = ${user.id}`,
         orderBy: 'date_added DESC'
@@ -144,9 +112,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         });
         
         // Provide more specific error messages
-        if (supabaseError.code === '42501') {
-          throw new Error('Permission denied. Please check your authentication and try refreshing the page.');
-        } else if (supabaseError.code === 'PGRST116') {
+        if (supabaseError.code === 'PGRST116') {
           throw new Error('Database table not found. Please ensure the database is properly set up.');
         } else {
           throw supabaseError;
@@ -257,9 +223,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     setError(null);
 
     try {
-      console.log('🔑 Setting auth context before sync...');
-      await setAuthContext(user.id);
-      
       console.log('📤 Requesting bookmarks from Chrome extension...');
       const response = await sendMessageToExtension({ action: 'getBookmarks' });
       const extensionBookmarks: ExtensionBookmark[] = response.bookmarks || [];
@@ -440,7 +403,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       return;
     }
 
-    console.log('➕ Adding bookmark:', {
+    console.log('➕ Adding bookmark (simplified):', {
       title: title,
       url: url,
       folder: folder,
@@ -451,17 +414,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     setError(null);
 
     try {
-      console.log('🔑 Setting auth context before add...');
-      const authResult = await setAuthContext(user.id);
-      
-      if (authResult.error) {
-        console.warn('⚠️ Auth context setup had issues:', authResult.error);
-      }
-
-      // Debug auth context before insert
-      const debugResult = await debugAuthContext();
-      console.log('🔍 Auth debug before insert:', debugResult);
-      
       const bookmarkData = {
         user_id: user.id,
         title,
@@ -483,13 +435,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           error: error,
           bookmarkData: bookmarkData
         });
-        
-        // Provide more specific error messages
-        if (error.code === '42501') {
-          throw new Error('Permission denied. Please refresh the page and try again.');
-        } else {
-          throw error;
-        }
+        throw error;
       }
       
       console.log('✅ Bookmark added to database:', data);
@@ -533,7 +479,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       return;
     }
 
-    console.log('🗑️ Removing bookmark:', {
+    console.log('🗑️ Removing bookmark (simplified):', {
       bookmarkId: id,
       userId: user.id
     });
@@ -542,9 +488,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     setError(null);
 
     try {
-      console.log('🔑 Setting auth context before remove...');
-      await setAuthContext(user.id);
-      
       console.log('📊 Fetching bookmark details before removal...');
       const { data: bookmark, error: fetchError } = await supabase
         .from('bookmarks')
@@ -573,12 +516,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           bookmarkId: id,
           userId: user.id
         });
-        
-        if (error.code === '42501') {
-          throw new Error('Permission denied. Please refresh the page and try again.');
-        } else {
-          throw error;
-        }
+        throw error;
       }
       
       console.log('✅ Bookmark removed from database');
@@ -619,7 +557,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       return;
     }
 
-    console.log('📝 Updating bookmark:', {
+    console.log('📝 Updating bookmark (simplified):', {
       bookmarkId: id,
       updates: updates,
       userId: user.id
@@ -629,9 +567,6 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     setError(null);
 
     try {
-      console.log('🔑 Setting auth context before update...');
-      await setAuthContext(user.id);
-      
       console.log('📊 Executing update query...');
       const { data, error } = await supabase
         .from('bookmarks')
@@ -648,12 +583,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           updates: updates,
           userId: user.id
         });
-        
-        if (error.code === '42501') {
-          throw new Error('Permission denied. Please refresh the page and try again.');
-        } else {
-          throw error;
-        }
+        throw error;
       }
       
       console.log('✅ Bookmark updated successfully:', data);
@@ -682,7 +612,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     await loadBookmarks();
   }, [loadBookmarks]);
 
-  console.log('📊 useSupabaseBookmarks hook state:', {
+  console.log('📊 useSupabaseBookmarks hook state (simplified):', {
     bookmarksCount: bookmarks.length,
     loading: loading,
     error: error,
