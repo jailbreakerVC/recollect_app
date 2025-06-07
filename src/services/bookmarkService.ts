@@ -5,15 +5,27 @@ export class BookmarkService {
    * Set user context for RLS policies
    */
   private static async setUserContext(userId: string): Promise<void> {
-    // Set the user ID in the database session for RLS policies
-    const { error } = await supabase.rpc('set_config', {
-      setting_name: 'app.user_id',
-      setting_value: userId,
-      is_local: true
-    });
+    // Use the custom RPC function we created in our migration
+    try {
+      const { error } = await supabase.rpc('set_user_context', {
+        user_id: userId
+      });
 
-    if (error) {
-      console.warn('Failed to set user context:', error.message);
+      if (error) {
+        console.warn('Failed to set user context:', error.message);
+      }
+    } catch (err) {
+      console.warn('User context function not available, using direct config:', err);
+      // Fallback: try to set config directly (this might not work with RLS)
+      try {
+        await supabase.rpc('set_config', {
+          setting_name: 'app.user_id',
+          setting_value: userId,
+          is_local: true
+        });
+      } catch (configError) {
+        console.warn('Direct config also failed:', configError);
+      }
     }
   }
 

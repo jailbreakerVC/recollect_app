@@ -101,6 +101,16 @@ export class ExtensionService {
     console.log('👂 Setting up extension event listeners');
     
     const handleMessage = (event: MessageEvent) => {
+      // Filter out React DevTools and other non-bookmark messages
+      if (event.data.source && (
+        event.data.source.includes('react-devtools') ||
+        event.data.source.includes('devtools') ||
+        event.data.source === 'react-devtools-content-script' ||
+        event.data.source === 'react-devtools-bridge'
+      )) {
+        return; // Ignore React DevTools messages
+      }
+      
       if (event.data.source === 'bookmark-manager-extension') {
         console.log('📨 Extension event received:', event.data);
         
@@ -146,7 +156,7 @@ export class ExtensionService {
     window.addEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
 
     // Also check periodically in case we missed the initial event
-    const intervalId = setInterval(checkAvailability, 1000);
+    const intervalId = setInterval(checkAvailability, 2000); // Check every 2 seconds
 
     // Return cleanup function
     return () => {

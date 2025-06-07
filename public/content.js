@@ -11,6 +11,16 @@ window.addEventListener('message', (event) => {
   // Only accept messages from the same origin
   if (event.origin !== window.location.origin) return;
   
+  // Filter out React DevTools and other non-bookmark messages
+  if (event.data.source && (
+    event.data.source.includes('react-devtools') ||
+    event.data.source.includes('devtools') ||
+    event.data.source === 'react-devtools-content-script' ||
+    event.data.source === 'react-devtools-bridge'
+  )) {
+    return; // Ignore React DevTools messages
+  }
+  
   console.log('📨 Content script received message from web page:', event.data);
   
   if (event.data.source === 'bookmark-manager-webapp') {
