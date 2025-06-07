@@ -152,10 +152,56 @@ const BookmarkManager: React.FC = () => {
       return;
     }
 
-    const loadingToastId = showLoading('Syncing Bookmarks', 'Checking for changes...');
+    console.log('🔄 Starting manual sync process...');
+    console.log('User ID:', user?.id);
+    console.log('Extension available:', extensionAvailable);
+
+    const loadingToastId = showLoading('Syncing Bookmarks', 'Initializing sync...');
 
     try {
+      // Test extension connection first
+      console.log('🧪 Testing extension connection...');
+      updateToast(loadingToastId, { 
+        title: 'Syncing Bookmarks', 
+        message: 'Testing extension connection...' 
+      });
+
+      let extensionBookmarks;
+      try {
+        extensionBookmarks = await ExtensionService.getBookmarks();
+        console.log('✅ Extension connection successful, got', extensionBookmarks.length, 'bookmarks');
+        console.log('Sample extension bookmarks:', extensionBookmarks.slice(0, 3));
+      } catch (extError) {
+        console.error('❌ Extension connection failed:', extError);
+        removeToast(loadingToastId);
+        showError('Extension Error', 'Failed to connect to Chrome extension');
+        return;
+      }
+
+      // Test database connection
+      console.log('🧪 Testing database connection...');
+      updateToast(loadingToastId, { 
+        title: 'Syncing Bookmarks', 
+        message: 'Testing database connection...' 
+      });
+
+      try {
+        const dbTest = await BookmarkService.testConnection(user!.id);
+        console.log('Database test result:', dbTest);
+        if (!dbTest.success) {
+          throw new Error(dbTest.message);
+        }
+      } catch (dbError) {
+        console.error('❌ Database connection failed:', dbError);
+        removeToast(loadingToastId);
+        showError('Database Error', 'Failed to connect to database');
+        return;
+      }
+
+      // Now perform the actual sync
+      console.log('🔄 Starting actual sync...');
       const result = await syncWithExtension((status) => {
+        console.log('Sync progress:', status);
         updateToast(loadingToastId, { 
           title: 'Syncing Bookmarks', 
           message: status 
@@ -163,6 +209,8 @@ const BookmarkManager: React.FC = () => {
       });
       
       removeToast(loadingToastId);
+      
+      console.log('✅ Sync completed with result:', result);
       
       if (result.hasChanges) {
         const changes = [];
@@ -180,8 +228,8 @@ const BookmarkManager: React.FC = () => {
     } catch (err) {
       removeToast(loadingToastId);
       const message = err instanceof Error ? err.message : 'Failed to sync with extension';
+      console.error('❌ Sync failed with error:', err);
       showError('Sync Failed', message);
-      console.error('Sync failed:', err);
     }
   };
 
@@ -235,6 +283,50 @@ const BookmarkManager: React.FC = () => {
       const message = err instanceof Error ? err.message : 'Connection test failed';
       showError('Connection Test Error', message);
       setConnectionStatus('disconnected');
+    }
+  };
+
+  // Debug sync button for development
+  const handleDebugSync = async () => {
+    if (!user || !extensionAvailable) return;
+
+    console.log('🐛 DEBUG SYNC: Starting detailed sync analysis...');
+    
+    try {
+      // Get extension bookmarks
+      const extensionBookmarks = await ExtensionService.getBookmarks();
+      console.log('🐛 Extension bookmarks:', extensionBookmarks);
+      
+      // Get database bookmarks
+      const databaseBookmarks = await BookmarkService.getBookmarks(user.id);
+      console.log('🐛 Database bookmarks:', databaseBookmarks);
+      
+      // Get total database count
+      const totalCount = await BookmarkService.getAllBookmarksCount();
+      console.log('🐛 Total database bookmarks:', totalCount);
+      
+      // Analyze differences
+      const extIds = new Set(extensionBookmarks.map(b => b.id));
+      const dbChromeIds = new Set(databaseBookmarks.map(b => b.chrome_bookmark_id).filter(Boolean));
+      
+      const newInExtension = extensionBookmarks.filter(b => !dbChromeIds.has(b.id));
+      const removedFromExtension = databaseBookmarks.filter(b => b.chrome_bookmark_id && !extIds.has(b.chrome_bookmark_id));
+      
+      console.log('🐛 Analysis:', {
+        extensionCount: extensionBookmarks.length,
+        databaseCount: databaseBookmarks.length,
+        totalDatabaseCount: totalCount,
+        newInExtension: newInExtension.length,
+        removedFromExtension: removedFromExtension.length,
+        newBookmarks: newInExtension.slice(0, 3),
+        removedBookmarks: removedFromExtension.slice(0, 3)
+      });
+      
+      showSuccess('Debug Analysis Complete', 'Check console for detailed sync analysis');
+      
+    } catch (err) {
+      console.error('🐛 Debug sync failed:', err);
+      showError('Debug Sync Failed', err instanceof Error ? err.message : 'Unknown error');
     }
   };
 
@@ -292,14 +384,24 @@ const BookmarkManager: React.FC = () => {
                 {bookmarks.length} bookmarks
               </div>
               {process.env.NODE_ENV === 'development' && (
-                <button
-                  onClick={handleTestConnection}
-                  className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
-                  title="Test database connection"
-                >
-                  <TestTube className="w-4 h-4 mr-2" />
-                  Test DB
-                </button>
+                <>
+                  <button
+                    onClick={handleTestConnection}
+                    className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                    title="Test database connection"
+                  >
+                    <TestTube className="w-4 h-4 mr-2" />
+                    Test DB
+                  </button>
+                  <button
+                    onClick={handleDebugSync}
+                    className="inline-flex items-center px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
+                    title="Debug sync analysis"
+                  >
+                    <Bug className="w-4 h-4 mr-2" />
+                    Debug Sync
+                  </button>
+                </>
               )}
               <button
                 onClick={handleRefresh}
