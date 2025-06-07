@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp, Bug, TestTube } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { ExtensionService } from '../services/extensionService';
@@ -205,6 +205,29 @@ const BookmarkManager: React.FC = () => {
     }
   };
 
+  const handleTestConnection = async () => {
+    if (!user) return;
+    
+    const loadingToastId = showLoading('Testing Connection', 'Testing database connection...');
+    
+    try {
+      const result = await BookmarkService.testConnection(user.id);
+      removeToast(loadingToastId);
+      
+      if (result.success) {
+        showSuccess('Connection Test', result.message);
+        setDebugInfo(result.debug);
+      } else {
+        showError('Connection Test Failed', result.message);
+        setDebugInfo(result.debug);
+      }
+    } catch (err) {
+      removeToast(loadingToastId);
+      const message = err instanceof Error ? err.message : 'Connection test failed';
+      showError('Connection Test Error', message);
+    }
+  };
+
   if (loading && bookmarks.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
@@ -255,6 +278,16 @@ const BookmarkManager: React.FC = () => {
               <div className="text-sm text-gray-500">
                 {bookmarks.length} bookmarks
               </div>
+              {process.env.NODE_ENV === 'development' && (
+                <button
+                  onClick={handleTestConnection}
+                  className="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                  title="Test database connection"
+                >
+                  <TestTube className="w-4 h-4 mr-2" />
+                  Test DB
+                </button>
+              )}
               <button
                 onClick={handleRefresh}
                 disabled={loading}
@@ -359,13 +392,22 @@ const BookmarkManager: React.FC = () => {
           <div className="mb-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">
               <h4 className="font-semibold text-gray-900">Debug Information</h4>
-              <button
-                onClick={handleDebugRefresh}
-                className="inline-flex items-center px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors"
-              >
-                <Bug className="w-3 h-3 mr-1" />
-                Refresh Debug
-              </button>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleTestConnection}
+                  className="inline-flex items-center px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors"
+                >
+                  <TestTube className="w-3 h-3 mr-1" />
+                  Test Connection
+                </button>
+                <button
+                  onClick={handleDebugRefresh}
+                  className="inline-flex items-center px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors"
+                >
+                  <Bug className="w-3 h-3 mr-1" />
+                  Refresh Debug
+                </button>
+              </div>
             </div>
             <div className="text-sm text-gray-600 space-y-1">
               <div>Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? '✅ Set' : '❌ Missing'}</div>
@@ -556,7 +598,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">

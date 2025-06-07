@@ -8,37 +8,49 @@ export class BookmarkService {
     console.log('🔐 Setting user context for:', userId);
     
     try {
-      // Use our new improved user context function
+      // Use our improved user context function
       const { error } = await supabase.rpc('set_app_user_context', {
         user_id: userId
       });
 
       if (error) {
-        console.warn('Failed to set user context via RPC:', error.message);
+        console.warn('Failed to set user context via set_app_user_context:', error.message);
         
-        // Fallback: try the old method
+        // Fallback: try the alternative method
         try {
-          await supabase.rpc('set_user_context', { user_id: userId });
-          console.log('✅ User context set via fallback method');
-        } catch (fallbackError) {
-          console.warn('Fallback user context also failed:', fallbackError);
+          const { error: fallbackError } = await supabase.rpc('set_user_context', { 
+            user_id: userId 
+          });
+          
+          if (fallbackError) {
+            console.warn('Fallback user context also failed:', fallbackError.message);
+          } else {
+            console.log('✅ User context set via fallback method');
+          }
+        } catch (fallbackErr) {
+          console.warn('Fallback user context error:', fallbackErr);
         }
       } else {
         console.log('✅ User context set successfully');
       }
     } catch (err) {
-      console.warn('User context RPC not available:', err);
+      console.warn('User context RPC error:', err);
       
       // Last resort: try direct config setting
       try {
-        await supabase.rpc('set_config', {
+        const { error: configError } = await supabase.rpc('set_config', {
           setting_name: 'app.current_user_id',
           setting_value: userId,
           is_local: true
         });
-        console.log('✅ User context set via direct config');
-      } catch (configError) {
-        console.warn('All user context methods failed:', configError);
+        
+        if (configError) {
+          console.warn('Direct config setting failed:', configError.message);
+        } else {
+          console.log('✅ User context set via direct config');
+        }
+      } catch (configErr) {
+        console.warn('All user context methods failed:', configErr);
       }
     }
   }
@@ -74,7 +86,8 @@ export class BookmarkService {
     
     // Debug context in development
     if (process.env.NODE_ENV === 'development') {
-      await this.debugUserContext();
+      const debug = await this.debugUserContext();
+      console.log('Debug context after setting:', debug);
     }
 
     const { data, error } = await supabase
@@ -115,6 +128,8 @@ export class BookmarkService {
       date_added: new Date().toISOString(),
     };
 
+    console.log('📝 Inserting bookmark data:', bookmarkData);
+
     const { data, error } = await supabase
       .from('bookmarks')
       .insert(bookmarkData)
@@ -126,7 +141,8 @@ export class BookmarkService {
       
       // Debug context on error
       if (process.env.NODE_ENV === 'development') {
-        await this.debugUserContext();
+        const debug = await this.debugUserContext();
+        console.log('Debug context on error:', debug);
       }
       
       throw new Error(`Failed to add bookmark: ${error.message}`);
@@ -222,15 +238,19 @@ export class BookmarkService {
       return [];
     }
 
-    console.log(`📦 Bulk inserting ${bookmarks.length} bookmarks`);
+    console.log(`📦 Bulk inserting ${bookmarks.length} bookmarks for user:`, userId);
     
     // Set user context for RLS
     await this.setUserContext(userId);
 
     // Debug context before bulk insert
     if (process.env.NODE_ENV === 'development') {
-      await this.debugUserContext();
+      const debug = await this.debugUserContext();
+      console.log('Debug context before bulk insert:', debug);
     }
+
+    // Log the first few bookmarks for debugging
+    console.log('Sample bookmarks to insert:', bookmarks.slice(0, 3));
 
     const { data, error } = await supabase
       .from('bookmarks')
@@ -239,10 +259,17 @@ export class BookmarkService {
 
     if (error) {
       console.error('❌ Failed to bulk insert bookmarks:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
       
       // Debug context on error
       if (process.env.NODE_ENV === 'development') {
-        await this.debugUserContext();
+        const debug = await this.debugUserContext();
+        console.log('Debug context on bulk insert error:', debug);
       }
       
       throw new Error(`Failed to bulk insert bookmarks: ${error.message}`);
@@ -264,7 +291,7 @@ export class BookmarkService {
       return;
     }
 
-    console.log(`🗑️ Removing ${chromeBookmarkIds.length} bookmarks by Chrome IDs`);
+    console.log(`🗑️ Removing ${chromeBookmarkIds.length} bookmarks by Chrome IDs for user:`, userId);
     
     // Set user context for RLS
     await this.setUserContext(userId);
@@ -280,5 +307,47 @@ export class BookmarkService {
     }
 
     console.log('✅ Bookmarks removed successfully');
+  }
+
+  /**
+   * Test database connection and user context
+   */
+  static async testConnection(userId: string): Promise<{ success: boolean; message: string; debug?: any }> {
+    try {
+      console.log('🧪 Testing database connection for user:', userId);
+      
+      // Set user context
+      await this.setUserContext(userId);
+      
+      // Get debug info
+      const debug = await this.debugUserContext();
+      console.log('Connection test debug:', debug);
+      
+      // Try a simple query
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('count', { count: 'exact', head: true });
+      
+      if (error) {
+        return {
+          success: false,
+          message: `Database query failed: ${error.message}`,
+          debug
+        };
+      }
+      
+      return {
+        success: true,
+        message: 'Database connection successful',
+        debug
+      };
+      
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return {
+        success: false,
+        message: `Connection test failed: ${message}`
+      };
+    }
   }
 }

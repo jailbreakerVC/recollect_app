@@ -66,15 +66,31 @@ export class SyncService {
     userId: string, 
     onProgress?: (status: string) => void
   ): Promise<SyncResult> {
+    console.log('🔄 Starting sync for user:', userId);
+    
     if (!ExtensionService.isExtensionAvailable()) {
       throw new Error('Chrome extension not available');
     }
+
+    onProgress?.('Testing database connection...');
+    
+    // Test database connection first
+    const connectionTest = await BookmarkService.testConnection(userId);
+    if (!connectionTest.success) {
+      console.error('❌ Database connection test failed:', connectionTest);
+      throw new Error(`Database connection failed: ${connectionTest.message}`);
+    }
+    
+    console.log('✅ Database connection test passed');
 
     onProgress?.('Checking for changes...');
     
     // Check if sync is actually needed
     const syncCheck = await this.checkSyncNeeded(userId);
+    console.log('🔍 Sync check result:', syncCheck);
+    
     if (!syncCheck.needed) {
+      console.log('ℹ️ No sync needed:', syncCheck.reason);
       return {
         inserted: 0,
         updated: 0,
@@ -84,13 +100,24 @@ export class SyncService {
       };
     }
 
-    onProgress?.('Fetching bookmarks...');
+    onProgress?.('Fetching bookmarks from Chrome...');
     
     // Get bookmarks from both sources
-    const [extensionBookmarks, databaseBookmarks] = await Promise.all([
-      ExtensionService.getBookmarks(),
-      BookmarkService.getBookmarks(userId)
-    ]);
+    let extensionBookmarks: ExtensionBookmark[];
+    let databaseBookmarks: DatabaseBookmark[];
+    
+    try {
+      [extensionBookmarks, databaseBookmarks] = await Promise.all([
+        ExtensionService.getBookmarks(),
+        BookmarkService.getBookmarks(userId)
+      ]);
+      
+      console.log(`📊 Extension bookmarks: ${extensionBookmarks.length}`);
+      console.log(`📊 Database bookmarks: ${databaseBookmarks.length}`);
+    } catch (error) {
+      console.error('❌ Failed to fetch bookmarks:', error);
+      throw new Error(`Failed to fetch bookmarks: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
 
     onProgress?.('Analyzing differences...');
 
@@ -104,6 +131,9 @@ export class SyncService {
     const extensionBookmarkMap = new Map(
       extensionBookmarks.map(b => [b.id, b])
     );
+
+    console.log(`📊 DB bookmarks with Chrome IDs: ${dbBookmarkMap.size}`);
+    console.log(`📊 Extension bookmarks mapped: ${extensionBookmarkMap.size}`);
 
     // Find bookmarks to insert and update
     const bookmarksToInsert: Partial<DatabaseBookmark>[] = [];
@@ -145,45 +175,68 @@ export class SyncService {
       .filter(b => b.chrome_bookmark_id && !extensionBookmarkIds.has(b.chrome_bookmark_id))
       .map(b => b.chrome_bookmark_id!);
 
+    console.log(`📊 Operations planned:`, {
+      insert: bookmarksToInsert.length,
+      update: bookmarksToUpdate.length,
+      remove: bookmarksToRemove.length
+    });
+
     // Execute operations
     let insertedCount = 0;
     let updatedCount = 0;
     let removedCount = 0;
 
-    if (bookmarksToInsert.length > 0) {
-      onProgress?.(`Adding ${bookmarksToInsert.length} new bookmarks...`);
-      await BookmarkService.bulkInsertBookmarks(userId, bookmarksToInsert);
-      insertedCount = bookmarksToInsert.length;
-    }
+    try {
+      if (bookmarksToInsert.length > 0) {
+        onProgress?.(`Adding ${bookmarksToInsert.length} new bookmarks...`);
+        console.log('➕ Inserting bookmarks:', bookmarksToInsert.length);
+        
+        const inserted = await BookmarkService.bulkInsertBookmarks(userId, bookmarksToInsert);
+        insertedCount = inserted.length;
+        console.log(`✅ Successfully inserted ${insertedCount} bookmarks`);
+      }
 
-    if (bookmarksToUpdate.length > 0) {
-      onProgress?.(`Updating ${bookmarksToUpdate.length} bookmarks...`);
-      await Promise.all(
-        bookmarksToUpdate.map(({ id, updates }) =>
-          BookmarkService.updateBookmark(id, userId, updates)
-        )
-      );
-      updatedCount = bookmarksToUpdate.length;
-    }
+      if (bookmarksToUpdate.length > 0) {
+        onProgress?.(`Updating ${bookmarksToUpdate.length} bookmarks...`);
+        console.log('📝 Updating bookmarks:', bookmarksToUpdate.length);
+        
+        await Promise.all(
+          bookmarksToUpdate.map(({ id, updates }) =>
+            BookmarkService.updateBookmark(id, userId, updates)
+          )
+        );
+        updatedCount = bookmarksToUpdate.length;
+        console.log(`✅ Successfully updated ${updatedCount} bookmarks`);
+      }
 
-    if (bookmarksToRemove.length > 0) {
-      onProgress?.(`Removing ${bookmarksToRemove.length} deleted bookmarks...`);
-      await BookmarkService.removeBookmarksByChromeIds(bookmarksToRemove, userId);
-      removedCount = bookmarksToRemove.length;
+      if (bookmarksToRemove.length > 0) {
+        onProgress?.(`Removing ${bookmarksToRemove.length} deleted bookmarks...`);
+        console.log('🗑️ Removing bookmarks:', bookmarksToRemove.length);
+        
+        await BookmarkService.removeBookmarksByChromeIds(bookmarksToRemove, userId);
+        removedCount = bookmarksToRemove.length;
+        console.log(`✅ Successfully removed ${removedCount} bookmarks`);
+      }
+    } catch (error) {
+      console.error('❌ Sync operation failed:', error);
+      throw new Error(`Sync operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
     // Update sync hash
     this.lastSyncHash = this.generateBookmarkHash(extensionBookmarks);
     
-    onProgress?.('Sync completed');
+    onProgress?.('Sync completed successfully');
 
-    return {
+    const result: SyncResult = {
       inserted: insertedCount,
       updated: updatedCount,
       removed: removedCount,
       total: extensionBookmarks.length,
       hasChanges: insertedCount > 0 || updatedCount > 0 || removedCount > 0
     };
+
+    console.log('✅ Sync completed:', result);
+    return result;
   }
 
   /**
@@ -207,6 +260,8 @@ export class SyncService {
     url: string,
     folder?: string
   ): Promise<DatabaseBookmark> {
+    console.log('➕ Adding bookmark everywhere:', { title, url, folder });
+    
     // Add to database first
     const bookmark = await BookmarkService.addBookmark(userId, title, url, folder);
 
@@ -216,8 +271,9 @@ export class SyncService {
         await ExtensionService.addBookmark(title, url);
         // Invalidate sync hash since we added a bookmark
         this.lastSyncHash = null;
+        console.log('✅ Bookmark added to Chrome extension');
       } catch (error) {
-        console.warn('Failed to add bookmark to Chrome:', error);
+        console.warn('⚠️ Failed to add bookmark to Chrome:', error);
         // Don't throw - database operation succeeded
       }
     }
@@ -233,6 +289,8 @@ export class SyncService {
     userId: string,
     chromeBookmarkId?: string
   ): Promise<void> {
+    console.log('🗑️ Removing bookmark everywhere:', { bookmarkId, chromeBookmarkId });
+    
     // Remove from database first
     await BookmarkService.removeBookmark(bookmarkId, userId);
 
@@ -242,8 +300,9 @@ export class SyncService {
         await ExtensionService.removeBookmark(chromeBookmarkId);
         // Invalidate sync hash since we removed a bookmark
         this.lastSyncHash = null;
+        console.log('✅ Bookmark removed from Chrome extension');
       } catch (error) {
-        console.warn('Failed to remove bookmark from Chrome:', error);
+        console.warn('⚠️ Failed to remove bookmark from Chrome:', error);
         // Don't throw - database operation succeeded
       }
     }
