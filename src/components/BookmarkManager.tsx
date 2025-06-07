@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 
@@ -10,6 +10,7 @@ const BookmarkManager: React.FC = () => {
     loading,
     error,
     extensionAvailable,
+    connectionStatus,
     syncWithExtension,
     addBookmark,
     removeBookmark
@@ -53,6 +54,37 @@ const BookmarkManager: React.FC = () => {
   const getFolderNames = () => {
     const folderNames = Array.from(new Set(bookmarks.map(b => b.folder).filter(Boolean)));
     return folderNames.sort();
+  };
+
+  const getConnectionStatusColor = () => {
+    switch (connectionStatus) {
+      case 'SUBSCRIBED':
+        return 'text-green-600';
+      case 'connecting':
+        return 'text-yellow-600';
+      case 'CHANNEL_ERROR':
+      case 'TIMED_OUT':
+        return 'text-red-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'SUBSCRIBED':
+        return 'Real-time Connected';
+      case 'connecting':
+        return 'Connecting...';
+      case 'CHANNEL_ERROR':
+        return 'Connection Error';
+      case 'TIMED_OUT':
+        return 'Connection Timeout';
+      case 'CLOSED':
+        return 'Disconnected';
+      default:
+        return 'Not Connected';
+    }
   };
 
   const handleAddBookmark = async (e: React.FormEvent) => {
@@ -116,7 +148,15 @@ const BookmarkManager: React.FC = () => {
                 <div className="flex items-center space-x-4 text-sm text-gray-600">
                   <div className="flex items-center">
                     <Database className="w-4 h-4 mr-1" />
-                    <span>Supabase Sync</span>
+                    <span>Supabase</span>
+                  </div>
+                  <div className={`flex items-center ${getConnectionStatusColor()}`}>
+                    {connectionStatus === 'SUBSCRIBED' ? (
+                      <Wifi className="w-4 h-4 mr-1" />
+                    ) : (
+                      <WifiOff className="w-4 h-4 mr-1" />
+                    )}
+                    <span>{getConnectionStatusText()}</span>
                   </div>
                   {extensionAvailable && (
                     <div className="flex items-center text-green-600">
@@ -156,15 +196,18 @@ const BookmarkManager: React.FC = () => {
         {/* Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           {/* Database Status */}
-          <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+          <div className={`rounded-lg p-6 ${connectionStatus === 'SUBSCRIBED' ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
             <div className="flex items-start">
-              <Database className="w-6 h-6 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+              <Database className={`w-6 h-6 mt-0.5 mr-3 flex-shrink-0 ${connectionStatus === 'SUBSCRIBED' ? 'text-green-600' : 'text-yellow-600'}`} />
               <div>
-                <h3 className="text-lg font-semibold text-green-800 mb-2">
-                  Database Connected
+                <h3 className={`text-lg font-semibold mb-2 ${connectionStatus === 'SUBSCRIBED' ? 'text-green-800' : 'text-yellow-800'}`}>
+                  Database {connectionStatus === 'SUBSCRIBED' ? 'Connected' : 'Status'}
                 </h3>
-                <p className="text-green-700">
-                  Your bookmarks are automatically saved to Supabase and sync in real-time across all your devices.
+                <p className={connectionStatus === 'SUBSCRIBED' ? 'text-green-700' : 'text-yellow-700'}>
+                  {connectionStatus === 'SUBSCRIBED' 
+                    ? 'Real-time sync is active. Changes will appear instantly across all devices.'
+                    : `Connection status: ${getConnectionStatusText()}. Manual refresh may be needed.`
+                  }
                 </p>
               </div>
             </div>
@@ -189,11 +232,32 @@ const BookmarkManager: React.FC = () => {
           </div>
         </div>
 
+        {/* Debug Information */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mb-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h4 className="font-semibold text-gray-900 mb-2">Debug Information</h4>
+            <div className="text-sm text-gray-600 space-y-1">
+              <div>Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? '✅ Set' : '❌ Missing'}</div>
+              <div>Supabase Key: {import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing'}</div>
+              <div>User ID: {user?.id || 'Not logged in'}</div>
+              <div>Connection Status: {connectionStatus}</div>
+              <div>Extension Available: {extensionAvailable ? 'Yes' : 'No'}</div>
+              <div>Bookmarks Count: {bookmarks.length}</div>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="mb-8 bg-red-50 border border-red-200 rounded-lg p-6">
             <div className="flex items-center">
               <AlertCircle className="w-6 h-6 text-red-600 mr-3" />
-              <p className="text-red-700">{error}</p>
+              <div>
+                <p className="text-red-700 font-medium">Connection Error</p>
+                <p className="text-red-600 text-sm mt-1">{error}</p>
+                <p className="text-red-600 text-sm mt-2">
+                  Please check your Supabase configuration and ensure your project is active.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -342,7 +406,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">

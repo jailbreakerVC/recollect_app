@@ -16,6 +16,7 @@ interface UseSupabaseBookmarksReturn {
   loading: boolean;
   error: string | null;
   extensionAvailable: boolean;
+  connectionStatus: string;
   syncWithExtension: () => Promise<void>;
   addBookmark: (title: string, url: string, folder?: string) => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
@@ -28,6 +29,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extensionAvailable, setExtensionAvailable] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
 
   // Check if extension is available
   useEffect(() => {
@@ -62,6 +64,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       if (supabaseError) throw supabaseError;
       setBookmarks(data || []);
     } catch (err) {
+      console.error('Error loading bookmarks:', err);
       setError(err instanceof Error ? err.message : 'Failed to load bookmarks');
     } finally {
       setLoading(false);
@@ -73,12 +76,21 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     loadBookmarks();
   }, [loadBookmarks]);
 
-  // Set up real-time subscription
+  // Set up real-time subscription with enhanced error handling
   useEffect(() => {
     if (!user) return;
 
-    const subscription = supabase
-      .channel('bookmarks_changes')
+    console.log('Setting up Supabase real-time subscription for user:', user.id);
+    setConnectionStatus('connecting');
+
+    const channel = supabase.channel(`bookmarks_${user.id}`, {
+      config: {
+        broadcast: { self: true },
+        presence: { key: user.id }
+      }
+    });
+
+    const subscription = channel
       .on(
         'postgres_changes',
         {
@@ -88,14 +100,38 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log('Bookmark change detected:', payload);
-          loadBookmarks(); // Reload bookmarks on any change
+          console.log('Real-time bookmark change detected:', payload);
+          loadBookmarks();
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('Subscription status:', status);
+        setConnectionStatus(status);
+        
+        if (err) {
+          console.error('Subscription error:', err);
+          setError(`Real-time connection error: ${err.message}`);
+        }
+        
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to real-time updates');
+          setError(null);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Channel error occurred');
+          setError('Real-time connection failed. Updates may be delayed.');
+        } else if (status === 'TIMED_OUT') {
+          console.error('Subscription timed out');
+          setError('Real-time connection timed out. Retrying...');
+        } else if (status === 'CLOSED') {
+          console.log('Subscription closed');
+          setConnectionStatus('disconnected');
+        }
+      });
 
     return () => {
+      console.log('Cleaning up subscription');
       subscription.unsubscribe();
+      setConnectionStatus('disconnected');
     };
   }, [user, loadBookmarks]);
 
@@ -106,7 +142,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         if (event.data.event === 'bookmarkCreated' || 
             event.data.event === 'bookmarkRemoved' || 
             event.data.event === 'bookmarkChanged') {
-          // Sync with extension when changes occur
+          console.log('Extension bookmark change detected:', event.data.event);
           syncWithExtension();
         }
       }
@@ -161,9 +197,13 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     setError(null);
 
     try {
+      console.log('Starting sync with Chrome extension...');
+      
       // Get bookmarks from Chrome extension
       const response = await sendMessageToExtension({ action: 'getBookmarks' });
       const extensionBookmarks: ExtensionBookmark[] = response.bookmarks || [];
+      
+      console.log(`Found ${extensionBookmarks.length} bookmarks in Chrome`);
 
       // Get existing bookmarks from database
       const { data: existingBookmarks } = await supabase
@@ -209,6 +249,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
       // Batch upsert bookmarks
       if (bookmarksToUpsert.length > 0) {
+        console.log(`Upserting ${bookmarksToUpsert.length} bookmarks`);
         const { error: upsertError } = await supabase
           .from('bookmarks')
           .upsert(bookmarksToUpsert, { 
@@ -226,6 +267,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         .map(b => b.id);
 
       if (bookmarksToDelete.length > 0) {
+        console.log(`Deleting ${bookmarksToDelete.length} bookmarks that no longer exist in Chrome`);
         const { error: deleteError } = await supabase
           .from('bookmarks')
           .delete()
@@ -236,8 +278,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
       // Reload bookmarks
       await loadBookmarks();
+      console.log('Sync completed successfully');
       
     } catch (err) {
+      console.error('Sync error:', err);
       setError(err instanceof Error ? err.message : 'Failed to sync bookmarks');
     } finally {
       setLoading(false);
@@ -248,6 +292,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     if (!user) return;
 
     try {
+      console.log('Adding bookmark:', { title, url, folder });
+      
       const { error } = await supabase
         .from('bookmarks')
         .insert({
@@ -268,11 +314,13 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
             title,
             url,
           });
+          console.log('Bookmark also added to Chrome');
         } catch (extError) {
           console.warn('Failed to add bookmark to Chrome:', extError);
         }
       }
     } catch (err) {
+      console.error('Add bookmark error:', err);
       throw new Error(err instanceof Error ? err.message : 'Failed to add bookmark');
     }
   }, [user, extensionAvailable, sendMessageToExtension]);
@@ -281,6 +329,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     if (!user) return;
 
     try {
+      console.log('Removing bookmark:', id);
+      
       // Get bookmark details first
       const { data: bookmark } = await supabase
         .from('bookmarks')
@@ -303,11 +353,13 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
             action: 'removeBookmark',
             id: bookmark.chrome_bookmark_id,
           });
+          console.log('Bookmark also removed from Chrome');
         } catch (extError) {
           console.warn('Failed to remove bookmark from Chrome:', extError);
         }
       }
     } catch (err) {
+      console.error('Remove bookmark error:', err);
       throw new Error(err instanceof Error ? err.message : 'Failed to remove bookmark');
     }
   }, [user, extensionAvailable, sendMessageToExtension]);
@@ -316,6 +368,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     if (!user) return;
 
     try {
+      console.log('Updating bookmark:', id, updates);
+      
       const { error } = await supabase
         .from('bookmarks')
         .update(updates)
@@ -323,6 +377,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
       if (error) throw error;
     } catch (err) {
+      console.error('Update bookmark error:', err);
       throw new Error(err instanceof Error ? err.message : 'Failed to update bookmark');
     }
   }, [user]);
@@ -330,6 +385,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   // Auto-sync when extension becomes available
   useEffect(() => {
     if (extensionAvailable && user) {
+      console.log('Extension became available, starting auto-sync');
       syncWithExtension();
     }
   }, [extensionAvailable, user, syncWithExtension]);
@@ -339,6 +395,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     loading,
     error,
     extensionAvailable,
+    connectionStatus,
     syncWithExtension,
     addBookmark,
     removeBookmark,
