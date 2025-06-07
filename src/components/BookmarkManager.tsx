@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
@@ -23,6 +23,45 @@ const BookmarkManager: React.FC = () => {
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'folder'>('date');
   const [showAddForm, setShowAddForm] = useState(false);
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
+
+  // Set up connection test response handler
+  useEffect(() => {
+    const handleConnectionTest = (event: MessageEvent) => {
+      if (event.data.source === 'bookmark-manager-extension' && 
+          event.data.event === 'connectionTest') {
+        console.log('🔍 BookmarkManager received connection test from extension');
+        // Respond to connection test
+        window.postMessage({
+          source: 'bookmark-manager-webapp',
+          type: 'connectionTestResponse',
+          data: { timestamp: Date.now(), responsive: true }
+        }, window.location.origin);
+      }
+    };
+
+    window.addEventListener('message', handleConnectionTest);
+    
+    return () => {
+      window.removeEventListener('message', handleConnectionTest);
+    };
+  }, []);
+
+  // Set up sync completion notification
+  useEffect(() => {
+    // Make sync completion function globally available
+    (window as any).notifyExtensionSyncComplete = function(data: any) {
+      console.log('📤 Notifying extension of sync completion:', data);
+      window.postMessage({
+        source: 'bookmark-manager-webapp',
+        type: 'syncComplete',
+        data: data
+      }, window.location.origin);
+    };
+
+    return () => {
+      delete (window as any).notifyExtensionSyncComplete;
+    };
+  }, []);
 
   const filteredBookmarks = bookmarks
     .filter(bookmark => {
@@ -256,6 +295,7 @@ const BookmarkManager: React.FC = () => {
               <div>Supabase Key: {import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing'}</div>
               <div>User ID: {user?.id || 'Not logged in'}</div>
               <div>Extension Available: {extensionAvailable ? 'Yes' : 'No'}</div>
+              <div>Extension Flag: {(window as any).bookmarkExtensionAvailable ? 'Set' : 'Not Set'}</div>
               <div>Bookmarks Count: {bookmarks.length}</div>
               <div>Loading: {loading ? 'Yes' : 'No'}</div>
               <div>Error: {error || 'None'}</div>
@@ -432,7 +472,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">

@@ -120,6 +120,17 @@ export class ExtensionService {
           console.log('🔄 Triggering bookmark change handler for:', eventType);
           onBookmarkChange(eventType);
         }
+        
+        // Handle connection test from extension
+        if (eventType === 'connectionTest') {
+          console.log('🔍 Received connection test from extension');
+          // Respond to connection test
+          window.postMessage({
+            source: 'bookmark-manager-webapp',
+            type: 'connectionTestResponse',
+            data: { timestamp: Date.now(), responsive: true }
+          }, window.location.origin);
+        }
       }
     };
 
@@ -149,6 +160,22 @@ export class ExtensionService {
       onAvailabilityChange(true);
     };
 
+    // Set up connection test response handler immediately
+    const handleConnectionTest = (event: MessageEvent) => {
+      if (event.data.source === 'bookmark-manager-extension' && 
+          event.data.event === 'connectionTest') {
+        console.log('🔍 Received connection test from extension');
+        // Respond to connection test
+        window.postMessage({
+          source: 'bookmark-manager-webapp',
+          type: 'connectionTestResponse',
+          data: { timestamp: Date.now(), responsive: true }
+        }, window.location.origin);
+      }
+    };
+
+    window.addEventListener('message', handleConnectionTest);
+
     // Check immediately
     checkAvailability();
 
@@ -162,6 +189,7 @@ export class ExtensionService {
     return () => {
       console.log('🧹 Cleaning up extension availability detection');
       window.removeEventListener('bookmarkExtensionReady', handleExtensionReady as EventListener);
+      window.removeEventListener('message', handleConnectionTest);
       clearInterval(intervalId);
     };
   }
