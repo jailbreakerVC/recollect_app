@@ -2,20 +2,97 @@ import { BookmarkService } from './bookmarkService';
 import { ExtensionService, ExtensionBookmark } from './extensionService';
 import { DatabaseBookmark } from '../lib/supabase';
 
+export interface SyncResult {
+  inserted: number;
+  updated: number;
+  removed: number;
+  total: number;
+  hasChanges: boolean;
+}
+
 export class SyncService {
+  private static lastSyncHash: string | null = null;
+  
   /**
-   * Sync Chrome bookmarks with database
+   * Generate a hash of bookmark data to detect changes
    */
-  static async syncWithExtension(userId: string): Promise<void> {
+  private static generateBookmarkHash(bookmarks: ExtensionBookmark[]): string {
+    const sortedBookmarks = bookmarks
+      .map(b => `${b.id}:${b.title}:${b.url}:${b.dateAdded}`)
+      .sort()
+      .join('|');
+    
+    // Simple hash function
+    let hash = 0;
+    for (let i = 0; i < sortedBookmarks.length; i++) {
+      const char = sortedBookmarks.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    return hash.toString(36);
+  }
+  
+  /**
+   * Check if sync is needed by comparing bookmark hashes
+   */
+  static async checkSyncNeeded(userId: string): Promise<{ needed: boolean; reason: string }> {
+    if (!ExtensionService.isExtensionAvailable()) {
+      return { needed: false, reason: 'Extension not available' };
+    }
+    
+    try {
+      const extensionBookmarks = await ExtensionService.getBookmarks();
+      const currentHash = this.generateBookmarkHash(extensionBookmarks);
+      
+      if (this.lastSyncHash === null) {
+        return { needed: true, reason: 'First sync' };
+      }
+      
+      if (this.lastSyncHash !== currentHash) {
+        return { needed: true, reason: 'Bookmarks changed' };
+      }
+      
+      return { needed: false, reason: 'Already up to date' };
+    } catch (error) {
+      return { needed: true, reason: 'Error checking - forcing sync' };
+    }
+  }
+  
+  /**
+   * Sync Chrome bookmarks with database with change detection
+   */
+  static async syncWithExtension(
+    userId: string, 
+    onProgress?: (status: string) => void
+  ): Promise<SyncResult> {
     if (!ExtensionService.isExtensionAvailable()) {
       throw new Error('Chrome extension not available');
     }
 
+    onProgress?.('Checking for changes...');
+    
+    // Check if sync is actually needed
+    const syncCheck = await this.checkSyncNeeded(userId);
+    if (!syncCheck.needed) {
+      return {
+        inserted: 0,
+        updated: 0,
+        removed: 0,
+        total: 0,
+        hasChanges: false
+      };
+    }
+
+    onProgress?.('Fetching bookmarks...');
+    
     // Get bookmarks from both sources
     const [extensionBookmarks, databaseBookmarks] = await Promise.all([
       ExtensionService.getBookmarks(),
       BookmarkService.getBookmarks(userId)
     ]);
+
+    onProgress?.('Analyzing differences...');
 
     // Create maps for efficient lookup
     const dbBookmarkMap = new Map(
@@ -69,25 +146,44 @@ export class SyncService {
       .map(b => b.chrome_bookmark_id!);
 
     // Execute operations
-    const operations = [];
+    let insertedCount = 0;
+    let updatedCount = 0;
+    let removedCount = 0;
 
     if (bookmarksToInsert.length > 0) {
-      operations.push(BookmarkService.bulkInsertBookmarks(userId, bookmarksToInsert));
+      onProgress?.(`Adding ${bookmarksToInsert.length} new bookmarks...`);
+      await BookmarkService.bulkInsertBookmarks(userId, bookmarksToInsert);
+      insertedCount = bookmarksToInsert.length;
     }
 
     if (bookmarksToUpdate.length > 0) {
-      operations.push(
-        ...bookmarksToUpdate.map(({ id, updates }) =>
+      onProgress?.(`Updating ${bookmarksToUpdate.length} bookmarks...`);
+      await Promise.all(
+        bookmarksToUpdate.map(({ id, updates }) =>
           BookmarkService.updateBookmark(id, userId, updates)
         )
       );
+      updatedCount = bookmarksToUpdate.length;
     }
 
     if (bookmarksToRemove.length > 0) {
-      operations.push(BookmarkService.removeBookmarksByChromeIds(bookmarksToRemove, userId));
+      onProgress?.(`Removing ${bookmarksToRemove.length} deleted bookmarks...`);
+      await BookmarkService.removeBookmarksByChromeIds(bookmarksToRemove, userId);
+      removedCount = bookmarksToRemove.length;
     }
 
-    await Promise.all(operations);
+    // Update sync hash
+    this.lastSyncHash = this.generateBookmarkHash(extensionBookmarks);
+    
+    onProgress?.('Sync completed');
+
+    return {
+      inserted: insertedCount,
+      updated: updatedCount,
+      removed: removedCount,
+      total: extensionBookmarks.length,
+      hasChanges: insertedCount > 0 || updatedCount > 0 || removedCount > 0
+    };
   }
 
   /**
@@ -118,6 +214,8 @@ export class SyncService {
     if (ExtensionService.isExtensionAvailable()) {
       try {
         await ExtensionService.addBookmark(title, url);
+        // Invalidate sync hash since we added a bookmark
+        this.lastSyncHash = null;
       } catch (error) {
         console.warn('Failed to add bookmark to Chrome:', error);
         // Don't throw - database operation succeeded
@@ -142,6 +240,8 @@ export class SyncService {
     if (ExtensionService.isExtensionAvailable() && chromeBookmarkId) {
       try {
         await ExtensionService.removeBookmark(chromeBookmarkId);
+        // Invalidate sync hash since we removed a bookmark
+        this.lastSyncHash = null;
       } catch (error) {
         console.warn('Failed to remove bookmark from Chrome:', error);
         // Don't throw - database operation succeeded

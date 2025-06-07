@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DatabaseBookmark } from '../lib/supabase';
 import { BookmarkService } from '../services/bookmarkService';
 import { ExtensionService } from '../services/extensionService';
-import { SyncService } from '../services/syncService';
+import { SyncService, SyncResult } from '../services/syncService';
 
 interface UseSupabaseBookmarksReturn {
   bookmarks: DatabaseBookmark[];
@@ -15,6 +15,8 @@ interface UseSupabaseBookmarksReturn {
   removeBookmark: (id: string) => Promise<void>;
   updateBookmark: (id: string, updates: Partial<DatabaseBookmark>) => Promise<void>;
   refreshBookmarks: () => Promise<void>;
+  syncStatus: string | null;
+  lastSyncResult: SyncResult | null;
 }
 
 export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
@@ -23,6 +25,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extensionAvailable, setExtensionAvailable] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
 
   // Load bookmarks from database
   const loadBookmarks = useCallback(async () => {
@@ -53,13 +57,64 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   useEffect(() => {
     if (!extensionAvailable) return;
 
-    const cleanup = ExtensionService.setupEventListeners(() => {
-      // Refresh bookmarks when extension events occur
-      loadBookmarks();
+    const cleanup = ExtensionService.setupEventListeners((event) => {
+      if (event === 'syncRequested') {
+        // Handle sync request from extension
+        handleExtensionSyncRequest();
+      } else {
+        // Refresh bookmarks for other events
+        loadBookmarks();
+      }
     });
 
     return cleanup;
   }, [extensionAvailable, loadBookmarks]);
+
+  // Handle sync request from extension
+  const handleExtensionSyncRequest = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      setSyncStatus('Starting sync...');
+      
+      const result = await SyncService.syncWithExtension(user.id, (status) => {
+        setSyncStatus(status);
+      });
+      
+      setLastSyncResult(result);
+      
+      if (result.hasChanges) {
+        await loadBookmarks(); // Refresh if there were changes
+        setSyncStatus(`Synced: +${result.inserted} -${result.removed} ~${result.updated}`);
+      } else {
+        setSyncStatus('Already up to date');
+      }
+      
+      // Notify extension that sync is complete
+      if ((window as any).notifyExtensionSyncComplete) {
+        (window as any).notifyExtensionSyncComplete({
+          success: true,
+          result: result
+        });
+      }
+      
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sync failed';
+      setError(message);
+      setSyncStatus('Sync failed');
+      
+      // Notify extension of failure
+      if ((window as any).notifyExtensionSyncComplete) {
+        (window as any).notifyExtensionSyncComplete({
+          success: false,
+          error: message
+        });
+      }
+    } finally {
+      // Clear sync status after 3 seconds
+      setTimeout(() => setSyncStatus(null), 3000);
+    }
+  }, [user, loadBookmarks]);
 
   // Load bookmarks when user changes
   useEffect(() => {
@@ -68,6 +123,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     } else {
       setBookmarks([]);
       setError(null);
+      setSyncStatus(null);
+      setLastSyncResult(null);
     }
   }, [loadBookmarks, user]);
 
@@ -77,16 +134,31 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
     setLoading(true);
     setError(null);
+    setSyncStatus('Checking for changes...');
 
     try {
-      await SyncService.syncWithExtension(user.id);
-      await loadBookmarks(); // Refresh after sync
+      const result = await SyncService.syncWithExtension(user.id, (status) => {
+        setSyncStatus(status);
+      });
+      
+      setLastSyncResult(result);
+      
+      if (result.hasChanges) {
+        await loadBookmarks(); // Refresh if there were changes
+        setSyncStatus(`Synced: +${result.inserted} -${result.removed} ~${result.updated}`);
+      } else {
+        setSyncStatus('Already up to date');
+      }
+      
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to sync with extension';
       setError(message);
+      setSyncStatus('Sync failed');
       console.error('Sync failed:', err);
     } finally {
       setLoading(false);
+      // Clear sync status after 3 seconds
+      setTimeout(() => setSyncStatus(null), 3000);
     }
   }, [user, extensionAvailable, loadBookmarks]);
 
@@ -169,5 +241,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     removeBookmark,
     updateBookmark,
     refreshBookmarks,
+    syncStatus,
+    lastSyncResult,
   };
 };

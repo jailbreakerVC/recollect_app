@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome, RotateCcw, CheckCircle, Clock, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 
@@ -13,7 +13,9 @@ const BookmarkManager: React.FC = () => {
     syncWithExtension,
     addBookmark,
     removeBookmark,
-    refreshBookmarks
+    refreshBookmarks,
+    syncStatus,
+    lastSyncResult
   } = useSupabaseBookmarks();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -133,6 +135,12 @@ const BookmarkManager: React.FC = () => {
                       <span>Chrome Extension</span>
                     </div>
                   )}
+                  {syncStatus && (
+                    <div className="flex items-center text-blue-600">
+                      <Clock className="w-4 h-4 mr-1" />
+                      <span>{syncStatus}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -172,7 +180,7 @@ const BookmarkManager: React.FC = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Database Status */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
             <div className="flex items-start">
@@ -205,6 +213,38 @@ const BookmarkManager: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Sync Status */}
+          {lastSyncResult && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+              <div className="flex items-start">
+                <TrendingUp className="w-6 h-6 mt-0.5 mr-3 flex-shrink-0 text-purple-600" />
+                <div>
+                  <h3 className="text-lg font-semibold mb-2 text-purple-800">
+                    Last Sync Results
+                  </h3>
+                  <div className="text-purple-700 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Added:</span>
+                      <span className="font-medium">{lastSyncResult.inserted}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Updated:</span>
+                      <span className="font-medium">{lastSyncResult.updated}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Removed:</span>
+                      <span className="font-medium">{lastSyncResult.removed}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-purple-200 pt-1">
+                      <span>Total:</span>
+                      <span className="font-medium">{lastSyncResult.total}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Debug Information */}
@@ -219,6 +259,7 @@ const BookmarkManager: React.FC = () => {
               <div>Bookmarks Count: {bookmarks.length}</div>
               <div>Loading: {loading ? 'Yes' : 'No'}</div>
               <div>Error: {error || 'None'}</div>
+              <div>Sync Status: {syncStatus || 'None'}</div>
             </div>
           </div>
         )}
@@ -391,7 +432,7 @@ const BookmarkManager: React.FC = () => {
                     <div className="flex items-center mr-3">
                       <Bookmark className="w-6 h-6 text-blue-600" />
                       {bookmark.chrome_bookmark_id && (
-                        <Chrome className="w-4 h-4 text-gray-400 ml-1\" title="Synced with Chrome" />
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
                       )}
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 truncate">

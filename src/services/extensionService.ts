@@ -94,13 +94,13 @@ export class ExtensionService {
   /**
    * Set up extension event listeners
    */
-  static setupEventListeners(onBookmarkChange: () => void): () => void {
+  static setupEventListeners(onBookmarkChange: (event?: string) => void): () => void {
     const handleMessage = (event: MessageEvent) => {
       if (event.data.source === 'bookmark-manager-extension') {
         const { event: eventType } = event.data;
         
         if (['bookmarkCreated', 'bookmarkRemoved', 'bookmarkChanged', 'syncRequested'].includes(eventType)) {
-          onBookmarkChange();
+          onBookmarkChange(eventType);
         }
       }
     };
