@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, Download, Upload, RefreshCw } from 'lucide-react';
+import { Bookmark, Folder, Calendar, ExternalLink, Search, Filter, Plus, AlertCircle, RefreshCw, Database, Chrome } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useExtensionBookmarks } from '../hooks/useExtensionBookmarks';
+import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 
 const BookmarkManager: React.FC = () => {
   const { user } = useAuth();
@@ -10,16 +10,16 @@ const BookmarkManager: React.FC = () => {
     loading,
     error,
     extensionAvailable,
-    refreshBookmarks,
+    syncWithExtension,
     addBookmark,
     removeBookmark
-  } = useExtensionBookmarks();
+  } = useSupabaseBookmarks();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'folder'>('date');
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newBookmark, setNewBookmark] = useState({ title: '', url: '' });
+  const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
 
   const filteredBookmarks = bookmarks
     .filter(bookmark => {
@@ -36,7 +36,7 @@ const BookmarkManager: React.FC = () => {
           return (a.folder || '').localeCompare(b.folder || '');
         case 'date':
         default:
-          return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime();
+          return new Date(b.date_added).getTime() - new Date(a.date_added).getTime();
       }
     });
 
@@ -60,8 +60,12 @@ const BookmarkManager: React.FC = () => {
     if (!newBookmark.title || !newBookmark.url) return;
 
     try {
-      await addBookmark(newBookmark.title, newBookmark.url);
-      setNewBookmark({ title: '', url: '' });
+      await addBookmark(
+        newBookmark.title, 
+        newBookmark.url, 
+        newBookmark.folder || undefined
+      );
+      setNewBookmark({ title: '', url: '', folder: '' });
       setShowAddForm(false);
     } catch (err) {
       console.error('Failed to add bookmark:', err);
@@ -75,6 +79,14 @@ const BookmarkManager: React.FC = () => {
       } catch (err) {
         console.error('Failed to remove bookmark:', err);
       }
+    }
+  };
+
+  const handleSyncWithExtension = async () => {
+    try {
+      await syncWithExtension();
+    } catch (err) {
+      console.error('Failed to sync with extension:', err);
     }
   };
 
@@ -101,60 +113,78 @@ const BookmarkManager: React.FC = () => {
               </div>
               <div className="ml-4">
                 <h1 className="text-2xl font-bold text-gray-900">Bookmark Manager</h1>
-                <p className="text-gray-600">
-                  {extensionAvailable ? 'Connected to Chrome Extension' : 'Chrome Extension Required'}
-                </p>
+                <div className="flex items-center space-x-4 text-sm text-gray-600">
+                  <div className="flex items-center">
+                    <Database className="w-4 h-4 mr-1" />
+                    <span>Supabase Sync</span>
+                  </div>
+                  {extensionAvailable && (
+                    <div className="flex items-center text-green-600">
+                      <Chrome className="w-4 h-4 mr-1" />
+                      <span>Chrome Extension</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500">
-                {bookmarks.length} bookmarks found
+                {bookmarks.length} bookmarks
               </div>
               {extensionAvailable && (
                 <button
-                  onClick={refreshBookmarks}
+                  onClick={handleSyncWithExtension}
                   disabled={loading}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
+                  Sync Chrome
                 </button>
               )}
+              <button
+                onClick={() => window.location.hash = ''}
+                className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Back to Dashboard
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Extension Status */}
-        <div className={`mb-8 rounded-lg p-6 ${extensionAvailable ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
-          <div className="flex items-start">
-            <AlertCircle className={`w-6 h-6 mt-0.5 mr-3 flex-shrink-0 ${extensionAvailable ? 'text-green-600' : 'text-amber-600'}`} />
-            <div>
-              <h3 className={`text-lg font-semibold mb-2 ${extensionAvailable ? 'text-green-800' : 'text-amber-800'}`}>
-                {extensionAvailable ? 'Chrome Extension Connected' : 'Chrome Extension Required'}
-              </h3>
-              {extensionAvailable ? (
+        {/* Status Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Database Status */}
+          <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+            <div className="flex items-start">
+              <Database className="w-6 h-6 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div>
+                <h3 className="text-lg font-semibold text-green-800 mb-2">
+                  Database Connected
+                </h3>
                 <p className="text-green-700">
-                  Successfully connected to the Bookmark Manager Chrome extension. You can now access your real Chrome bookmarks!
+                  Your bookmarks are automatically saved to Supabase and sync in real-time across all your devices.
                 </p>
-              ) : (
-                <div className="text-amber-700">
-                  <p className="mb-3">
-                    To access your real Chrome bookmarks, you need to install the Bookmark Manager Chrome extension.
-                  </p>
-                  <div className="text-sm">
-                    <strong>Installation steps:</strong>
-                    <ol className="list-decimal list-inside mt-1 space-y-1">
-                      <li>Download the extension files from the public folder</li>
-                      <li>Open Chrome and go to chrome://extensions/</li>
-                      <li>Enable "Developer mode" in the top right</li>
-                      <li>Click "Load unpacked" and select the extension folder</li>
-                      <li>Refresh this page to connect</li>
-                    </ol>
-                  </div>
-                </div>
-              )}
+              </div>
+            </div>
+          </div>
+
+          {/* Extension Status */}
+          <div className={`rounded-lg p-6 ${extensionAvailable ? 'bg-blue-50 border border-blue-200' : 'bg-amber-50 border border-amber-200'}`}>
+            <div className="flex items-start">
+              <Chrome className={`w-6 h-6 mt-0.5 mr-3 flex-shrink-0 ${extensionAvailable ? 'text-blue-600' : 'text-amber-600'}`} />
+              <div>
+                <h3 className={`text-lg font-semibold mb-2 ${extensionAvailable ? 'text-blue-800' : 'text-amber-800'}`}>
+                  {extensionAvailable ? 'Chrome Extension Active' : 'Chrome Extension Optional'}
+                </h3>
+                <p className={extensionAvailable ? 'text-blue-700' : 'text-amber-700'}>
+                  {extensionAvailable 
+                    ? 'Chrome extension is connected. Your Chrome bookmarks will automatically sync to the database.'
+                    : 'Install the Chrome extension to automatically sync your browser bookmarks with the database.'
+                  }
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -168,179 +198,199 @@ const BookmarkManager: React.FC = () => {
           </div>
         )}
 
-        {extensionAvailable && (
-          <>
-            {/* Controls */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 mb-8">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
-                    placeholder="Search bookmarks..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                {/* Folder Filter */}
-                <div className="relative">
-                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <select
-                    value={selectedFolder}
-                    onChange={(e) => setSelectedFolder(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
-                  >
-                    <option value="all">All Folders</option>
-                    {getFolderNames().map(folder => (
-                      <option key={folder} value={folder}>{folder}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Sort */}
-                <div>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as 'date' | 'title' | 'folder')}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="date">Sort by Date Added</option>
-                    <option value="title">Sort by Title</option>
-                    <option value="folder">Sort by Folder</option>
-                  </select>
-                </div>
-
-                {/* Add Bookmark */}
-                <div>
-                  <button
-                    onClick={() => setShowAddForm(!showAddForm)}
-                    className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center"
-                  >
-                    <Plus className="w-5 h-5 mr-2" />
-                    Add Bookmark
-                  </button>
-                </div>
-              </div>
-
-              {/* Add Bookmark Form */}
-              {showAddForm && (
-                <form onSubmit={handleAddBookmark} className="mt-6 p-4 bg-gray-50 rounded-lg">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                      <input
-                        type="text"
-                        value={newBookmark.title}
-                        onChange={(e) => setNewBookmark(prev => ({ ...prev, title: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Bookmark title"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">URL</label>
-                      <input
-                        type="url"
-                        value={newBookmark.url}
-                        onChange={(e) => setNewBookmark(prev => ({ ...prev, url: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="https://example.com"
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex space-x-3">
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Add Bookmark
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddForm(false)}
-                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              )}
+        {/* Controls */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search bookmarks..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
 
-            {/* Bookmarks Grid */}
-            {filteredBookmarks.length === 0 ? (
-              <div className="text-center py-12">
-                <Bookmark className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No bookmarks found</h3>
-                <p className="text-gray-500">
-                  {searchTerm || selectedFolder !== 'all' 
-                    ? 'Try adjusting your search or filter criteria'
-                    : 'Your Chrome bookmarks will appear here'
-                  }
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredBookmarks.map((bookmark) => (
-                  <div
-                    key={bookmark.id}
-                    className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 hover:transform hover:-translate-y-1"
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center flex-1 min-w-0">
-                        <Bookmark className="w-6 h-6 text-blue-600 mr-3 flex-shrink-0" />
-                        <h3 className="text-lg font-semibold text-gray-900 truncate">
-                          {bookmark.title}
-                        </h3>
-                      </div>
-                      <div className="flex items-center space-x-2 ml-2">
-                        <a
-                          href={bookmark.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-800 transition-colors"
-                        >
-                          <ExternalLink className="w-5 h-5" />
-                        </a>
-                        <button
-                          onClick={() => handleRemoveBookmark(bookmark.id)}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-sm text-gray-600 break-all">{bookmark.url}</p>
-                      </div>
-
-                      <div className="flex items-center justify-between text-sm text-gray-500">
-                        <div className="flex items-center">
-                          <Calendar className="w-4 h-4 mr-1" />
-                          <span>{formatDate(bookmark.dateAdded)}</span>
-                        </div>
-                        
-                        {bookmark.folder && (
-                          <div className="flex items-center">
-                            <Folder className="w-4 h-4 mr-1" />
-                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                              {bookmark.folder}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+            {/* Folder Filter */}
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <select
+                value={selectedFolder}
+                onChange={(e) => setSelectedFolder(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
+              >
+                <option value="all">All Folders</option>
+                {getFolderNames().map(folder => (
+                  <option key={folder} value={folder}>{folder}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Sort */}
+            <div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'date' | 'title' | 'folder')}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="date">Sort by Date Added</option>
+                <option value="title">Sort by Title</option>
+                <option value="folder">Sort by Folder</option>
+              </select>
+            </div>
+
+            {/* Add Bookmark */}
+            <div>
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Add Bookmark
+              </button>
+            </div>
+          </div>
+
+          {/* Add Bookmark Form */}
+          {showAddForm && (
+            <form onSubmit={handleAddBookmark} className="mt-6 p-4 bg-gray-50 rounded-lg">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                  <input
+                    type="text"
+                    value={newBookmark.title}
+                    onChange={(e) => setNewBookmark(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Bookmark title"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">URL</label>
+                  <input
+                    type="url"
+                    value={newBookmark.url}
+                    onChange={(e) => setNewBookmark(prev => ({ ...prev, url: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://example.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Folder (Optional)</label>
+                  <input
+                    type="text"
+                    value={newBookmark.folder}
+                    onChange={(e) => setNewBookmark(prev => ({ ...prev, folder: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Folder name"
+                  />
+                </div>
               </div>
+              <div className="mt-4 flex space-x-3">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Add Bookmark
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+
+        {/* Bookmarks Grid */}
+        {filteredBookmarks.length === 0 ? (
+          <div className="text-center py-12">
+            <Bookmark className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No bookmarks found</h3>
+            <p className="text-gray-500 mb-4">
+              {searchTerm || selectedFolder !== 'all' 
+                ? 'Try adjusting your search or filter criteria'
+                : 'Add your first bookmark or sync with Chrome extension'
+              }
+            </p>
+            {extensionAvailable && (
+              <button
+                onClick={handleSyncWithExtension}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Sync Chrome Bookmarks
+              </button>
             )}
-          </>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredBookmarks.map((bookmark) => (
+              <div
+                key={bookmark.id}
+                className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 hover:transform hover:-translate-y-1"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center flex-1 min-w-0">
+                    <div className="flex items-center mr-3">
+                      <Bookmark className="w-6 h-6 text-blue-600" />
+                      {bookmark.chrome_bookmark_id && (
+                        <Chrome className="w-4 h-4 text-gray-400 ml-1" title="Synced with Chrome" />
+                      )}
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 truncate">
+                      {bookmark.title}
+                    </h3>
+                  </div>
+                  <div className="flex items-center space-x-2 ml-2">
+                    <a
+                      href={bookmark.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                    >
+                      <ExternalLink className="w-5 h-5" />
+                    </a>
+                    <button
+                      onClick={() => handleRemoveBookmark(bookmark.id)}
+                      className="text-red-600 hover:text-red-800 transition-colors"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-gray-600 break-all">{bookmark.url}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm text-gray-500">
+                    <div className="flex items-center">
+                      <Calendar className="w-4 h-4 mr-1" />
+                      <span>{formatDate(bookmark.date_added)}</span>
+                    </div>
+                    
+                    {bookmark.folder && (
+                      <div className="flex items-center">
+                        <Folder className="w-4 h-4 mr-1" />
+                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                          {bookmark.folder}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
