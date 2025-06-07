@@ -79,32 +79,7 @@ export interface DatabaseBookmark {
   updated_at: string;
 }
 
-// Helper function to create a custom JWT token for RLS
-export const createCustomToken = (userId: string) => {
-  console.log('🔐 Creating custom token for user:', userId);
-  
-  // Create a simple JWT-like structure for RLS
-  // In production, this should be done server-side with proper JWT signing
-  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = btoa(JSON.stringify({ 
-    sub: userId,
-    aud: 'authenticated',
-    role: 'authenticated',
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 3600 // 1 hour
-  }));
-  
-  const token = `${header}.${payload}.signature`;
-  console.log('✅ Custom token created:', {
-    userId: userId,
-    tokenLength: token.length,
-    tokenPrefix: token.substring(0, 50) + '...'
-  });
-  
-  return token;
-};
-
-// Set custom auth context for RLS
+// Set custom auth context for RLS - with fallback for missing functions
 export const setAuthContext = async (userId: string) => {
   console.log('🔑 Setting auth context for user:', userId);
   
@@ -122,6 +97,12 @@ export const setAuthContext = async (userId: string) => {
         code: error.code,
         userId: userId
       });
+      
+      // If the function doesn't exist, we'll work without it
+      if (error.code === 'PGRST202') {
+        console.warn('⚠️ RPC function not found, continuing without user context. RLS policies may not work correctly.');
+        return { data: null, error: null }; // Don't treat this as a fatal error
+      }
     } else {
       console.log('✅ Auth context set successfully:', {
         userId: userId,
@@ -140,7 +121,7 @@ export const setAuthContext = async (userId: string) => {
     });
     
     console.warn('⚠️ RPC set_user_context not available, using direct queries');
-    return { data: null, error: err };
+    return { data: null, error: null }; // Don't treat this as a fatal error
   }
 };
 
@@ -153,6 +134,10 @@ supabase.rpc('get_current_user_id').then(({ data, error }) => {
       message: error.message,
       code: error.code
     });
+    
+    if (error.code === 'PGRST202') {
+      console.warn('⚠️ RPC functions not available. You may need to run the migration to create them.');
+    }
   } else {
     console.log('✅ RPC functions are available:', {
       currentUserId: data,
