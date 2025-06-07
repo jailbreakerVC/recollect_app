@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, DatabaseBookmark, setAuthContext } from '../lib/supabase';
+import { supabase, DatabaseBookmark, setAuthContext, debugAuthContext } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ExtensionBookmark {
@@ -105,6 +105,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       if (authResult.error) {
         console.warn('⚠️ Auth context setup had issues, continuing anyway:', authResult.error);
       }
+
+      // Debug auth context
+      const debugResult = await debugAuthContext();
+      console.log('🔍 Auth debug result:', debugResult);
       
       console.log('📊 Executing Supabase query:', {
         table: 'bookmarks',
@@ -453,6 +457,10 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       if (authResult.error) {
         console.warn('⚠️ Auth context setup had issues:', authResult.error);
       }
+
+      // Debug auth context before insert
+      const debugResult = await debugAuthContext();
+      console.log('🔍 Auth debug before insert:', debugResult);
       
       const bookmarkData = {
         user_id: user.id,

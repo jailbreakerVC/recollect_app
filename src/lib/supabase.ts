@@ -128,6 +128,26 @@ export const setAuthContext = async (userId: string) => {
   }
 };
 
+// Debug function to help troubleshoot auth issues
+export const debugAuthContext = async () => {
+  console.log('🔍 Getting auth debug information...');
+  
+  try {
+    const { data, error } = await supabase.rpc('debug_auth_context');
+    
+    if (error) {
+      console.error('❌ Debug auth context failed:', error);
+      return { data: null, error };
+    }
+    
+    console.log('🔍 Auth debug info:', data);
+    return { data, error: null };
+  } catch (err) {
+    console.error('❌ Debug auth context exception:', err);
+    return { data: null, error: err };
+  }
+};
+
 // Test RPC function availability
 console.log('🧪 Testing RPC function availability...');
 supabase.rpc('get_current_user_id').then(({ data, error }) => {
