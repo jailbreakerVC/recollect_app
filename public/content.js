@@ -202,9 +202,13 @@ if (document.documentElement) {
 }
 
 // Keep connection alive with background script
-const port = chrome.runtime.connect({ name: 'content-script' });
-port.onDisconnect.addListener(() => {
-  console.log('🔌 Content script disconnected from background');
-});
+try {
+  const port = chrome.runtime.connect({ name: 'content-script' });
+  port.onDisconnect.addListener(() => {
+    console.log('🔌 Content script disconnected from background');
+  });
+} catch (error) {
+  console.log('⚠️ Could not connect to background script:', error.message);
+}
 
 console.log('✅ Bookmark Manager content script initialized');

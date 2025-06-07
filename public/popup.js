@@ -55,8 +55,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
+  // Inject content script if not present
+  async function ensureContentScript(tabId) {
+    try {
+      console.log('💉 Injecting content script into tab:', tabId);
+      
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['content.js']
+      });
+      
+      console.log('✅ Content script injected successfully');
+      
+      // Wait a moment for script to initialize
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to inject content script:', error);
+      return false;
+    }
+  }
+  
   // Check if web app is open and responsive
-  function checkWebAppConnection() {
+  async function checkWebAppConnection() {
     console.log('🔍 Checking web app connection...');
     
     const webAppUrls = [
@@ -66,54 +88,79 @@ document.addEventListener('DOMContentLoaded', () => {
       'https://*.vercel.app/*'
     ];
     
-    chrome.tabs.query({ url: webAppUrls }, (tabs) => {
-      if (chrome.runtime.lastError) {
-        console.error('❌ Tab query error:', chrome.runtime.lastError);
-        updateStatus(false, '❌ Connection Error');
-        return;
-      }
-      
+    try {
+      const tabs = await chrome.tabs.query({ url: webAppUrls });
       console.log('📋 Found tabs:', tabs?.length || 0);
       
       if (tabs && tabs.length > 0) {
-        // Test if web app is actually responsive
-        testWebAppResponsiveness(tabs[0]);
+        // Try each tab until we find a responsive one
+        for (const tab of tabs) {
+          const isResponsive = await testTabResponsiveness(tab);
+          if (isResponsive) {
+            updateStatus(true, '✅ Connected to Web App');
+            getBookmarkCount();
+            return;
+          }
+        }
+        
+        // No responsive tabs found
+        updateStatus(false, '⚠️ Web App Not Responsive');
       } else {
         updateStatus(false, '⚠️ Web App Not Open');
       }
-    });
+    } catch (error) {
+      console.error('❌ Error checking connection:', error);
+      updateStatus(false, '❌ Connection Error');
+    }
   }
   
-  // Test if web app can receive and respond to messages
-  function testWebAppResponsiveness(tab) {
-    console.log('🧪 Testing web app responsiveness on tab:', tab.id);
+  // Test if a specific tab is responsive
+  async function testTabResponsiveness(tab) {
+    console.log('🧪 Testing tab responsiveness:', tab.id, tab.url);
     
-    // Send connection test message to content script
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'testConnection'
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('❌ Content script not responding:', chrome.runtime.lastError);
-        updateStatus(false, '⚠️ Extension Not Loaded');
-        return;
-      }
+    try {
+      // First, try to send a message to see if content script is loaded
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: 'testConnection'
+      });
       
-      console.log('📨 Content script response:', response);
+      console.log('📨 Tab response:', response);
       
       if (response && response.success) {
         if (response.responsive) {
-          console.log('✅ Web app is responsive');
-          updateStatus(true, '✅ Connected to Web App');
-          getBookmarkCount();
+          console.log('✅ Tab is responsive');
+          return true;
         } else {
-          console.log('⚠️ Web app not responsive');
-          updateStatus(false, '⚠️ Web App Not Responsive');
+          console.log('⚠️ Tab not responsive');
+          return false;
         }
       } else {
-        console.log('❌ Invalid response from content script');
-        updateStatus(false, '⚠️ Communication Error');
+        console.log('❌ Invalid response from tab');
+        return false;
       }
-    });
+      
+    } catch (error) {
+      console.log('⚠️ Content script not responding, trying to inject:', error.message);
+      
+      // Try to inject content script
+      const injected = await ensureContentScript(tab.id);
+      if (!injected) {
+        return false;
+      }
+      
+      // Try again after injection
+      try {
+        const response = await chrome.tabs.sendMessage(tab.id, {
+          action: 'testConnection'
+        });
+        
+        console.log('📨 Tab response after injection:', response);
+        return response && response.success && response.responsive;
+      } catch (retryError) {
+        console.error('❌ Still no response after injection:', retryError.message);
+        return false;
+      }
+    }
   }
   
   // Get bookmark count from Chrome
@@ -246,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('🔄 Sync reason:', reasonText[syncCheck.reason]);
       
       // Get current bookmarks
-      chrome.bookmarks.getTree((bookmarkTree) => {
+      chrome.bookmarks.getTree(async (bookmarkTree) => {
         if (chrome.runtime.lastError) {
           console.error('❌ Failed to get bookmarks:', chrome.runtime.lastError);
           updateStatus(false, '❌ Sync Failed');
@@ -258,15 +305,17 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBookmarkCount(count);
         console.log('📚 Current bookmark count:', count);
         
-        // Notify web app to perform sync
-        chrome.tabs.query({ 
-          url: [
-            'http://localhost:*/*',
-            'https://localhost:*/*',
-            'https://*.netlify.app/*',
-            'https://*.vercel.app/*'
-          ] 
-        }, (tabs) => {
+        // Find responsive web app tabs
+        const webAppUrls = [
+          'http://localhost:*/*',
+          'https://localhost:*/*',
+          'https://*.netlify.app/*',
+          'https://*.vercel.app/*'
+        ];
+        
+        try {
+          const tabs = await chrome.tabs.query({ url: webAppUrls });
+          
           if (tabs && tabs.length > 0) {
             console.log('📤 Sending sync request to web app...');
             
@@ -293,23 +342,55 @@ document.addEventListener('DOMContentLoaded', () => {
             
             chrome.runtime.onMessage.addListener(responseListener);
             
-            // Send sync request to web app
+            // Send sync request to responsive tabs
+            let messageSent = false;
             for (const tab of tabs) {
-              chrome.tabs.sendMessage(tab.id, {
-                action: 'notifyWebApp',
-                event: 'syncRequested',
-                data: { 
-                  count,
-                  reason: syncCheck.reason,
-                  timestamp: Date.now()
+              try {
+                await chrome.tabs.sendMessage(tab.id, {
+                  action: 'notifyWebApp',
+                  event: 'syncRequested',
+                  data: { 
+                    count,
+                    reason: syncCheck.reason,
+                    timestamp: Date.now()
+                  }
+                });
+                
+                console.log('📨 Sync request sent to tab:', tab.id);
+                messageSent = true;
+                break; // Only need to send to one responsive tab
+              } catch (error) {
+                console.log('⚠️ Tab not ready for messages:', error.message);
+                // Try to inject content script and retry
+                const injected = await ensureContentScript(tab.id);
+                if (injected) {
+                  try {
+                    await chrome.tabs.sendMessage(tab.id, {
+                      action: 'notifyWebApp',
+                      event: 'syncRequested',
+                      data: { 
+                        count,
+                        reason: syncCheck.reason,
+                        timestamp: Date.now()
+                      }
+                    });
+                    
+                    console.log('📨 Sync request sent to tab after injection:', tab.id);
+                    messageSent = true;
+                    break;
+                  } catch (retryError) {
+                    console.log('⚠️ Still failed after injection:', retryError.message);
+                  }
                 }
-              }, (response) => {
-                if (chrome.runtime.lastError) {
-                  console.log('⚠️ Tab not ready for messages:', chrome.runtime.lastError.message);
-                } else {
-                  console.log('📨 Sync request sent to tab:', tab.id);
-                }
-              });
+              }
+            }
+            
+            if (!messageSent) {
+              console.log('❌ Could not send sync request to any tab');
+              updateStatus(false, '⚠️ Web App Not Responsive');
+              resetSyncButton();
+              chrome.runtime.onMessage.removeListener(responseListener);
+              return;
             }
             
             // Timeout if no response in 10 seconds
@@ -327,7 +408,11 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatus(false, '⚠️ Web App Not Open');
             resetSyncButton();
           }
-        });
+        } catch (error) {
+          console.error('❌ Error during sync:', error);
+          updateStatus(false, '❌ Sync Failed');
+          resetSyncButton();
+        }
       });
       
     } catch (error) {

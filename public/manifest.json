@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Bookmark Manager Extension",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Access and sync your Chrome bookmarks with the Bookmark Manager web app",
   "permissions": [
     "bookmarks",
     "storage",
     "activeTab",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "http://localhost:*/*",

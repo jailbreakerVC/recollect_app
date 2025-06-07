@@ -12,7 +12,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 });
 
-// Handle messages from content scripts
+// Handle messages from content scripts and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request);
   
@@ -30,6 +30,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'removeBookmark') {
     handleRemoveBookmark(request, sendResponse);
     return true;
+  }
+  
+  // Handle sync completion messages from content script
+  if (request.action === 'syncComplete') {
+    console.log('Sync completion received in background:', request.data);
+    // Forward to popup if it's open
+    chrome.runtime.sendMessage(request).catch(() => {
+      // Popup might not be open, that's okay
+      console.log('Popup not open to receive sync completion');
+    });
+    sendResponse({ success: true });
+    return;
   }
   
   // Handle other actions synchronously
@@ -205,7 +217,7 @@ chrome.bookmarks.onMoved.addListener((id, moveInfo) => {
 });
 
 // Notify web app of bookmark changes
-function notifyWebApp(event, data) {
+async function notifyWebApp(event, data) {
   // Find tabs with the web app open
   const webAppUrls = [
     'http://localhost:*/*',
@@ -214,11 +226,8 @@ function notifyWebApp(event, data) {
     'https://*.vercel.app/*'
   ];
   
-  chrome.tabs.query({ url: webAppUrls }, (tabs) => {
-    if (chrome.runtime.lastError) {
-      console.error('Failed to query tabs:', chrome.runtime.lastError);
-      return;
-    }
+  try {
+    const tabs = await chrome.tabs.query({ url: webAppUrls });
     
     if (!tabs || tabs.length === 0) {
       console.log('No web app tabs found for notification');
@@ -227,20 +236,43 @@ function notifyWebApp(event, data) {
     
     // Send message to all matching tabs
     for (const tab of tabs) {
-      chrome.tabs.sendMessage(tab.id, {
-        action: 'notifyWebApp',
-        event: event,
-        data: data
-      }, (response) => {
-        // Ignore errors - tab might not have content script loaded
-        if (chrome.runtime.lastError) {
-          console.log(`Tab ${tab.id} not ready:`, chrome.runtime.lastError.message);
-        } else {
-          console.log(`Notified tab ${tab.id} of ${event}`);
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'notifyWebApp',
+          event: event,
+          data: data
+        });
+        
+        console.log(`Notified tab ${tab.id} of ${event}`);
+      } catch (error) {
+        // Tab might not have content script loaded, try to inject it
+        console.log(`Tab ${tab.id} not ready, trying to inject content script:`, error.message);
+        
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content.js']
+          });
+          
+          // Wait a moment for script to initialize
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Try sending message again
+          await chrome.tabs.sendMessage(tab.id, {
+            action: 'notifyWebApp',
+            event: event,
+            data: data
+          });
+          
+          console.log(`Notified tab ${tab.id} of ${event} after injection`);
+        } catch (injectionError) {
+          console.log(`Failed to inject content script into tab ${tab.id}:`, injectionError.message);
         }
-      });
+      }
     }
-  });
+  } catch (error) {
+    console.error('Error notifying web app:', error);
+  }
 }
 
 // Handle extension startup
