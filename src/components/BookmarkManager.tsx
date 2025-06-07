@@ -34,6 +34,7 @@ const BookmarkManager: React.FC = () => {
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
+  const [extensionStatus, setExtensionStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
 
   // Initialize extension service
   useEffect(() => {
@@ -42,6 +43,53 @@ const BookmarkManager: React.FC = () => {
     
     return () => {
       console.log('📱 BookmarkManager: Component unmounting');
+    };
+  }, []);
+
+  // Enhanced extension availability detection
+  useEffect(() => {
+    let mounted = true;
+    
+    const checkExtensionStatus = async () => {
+      console.log('🔍 Checking extension status...');
+      setExtensionStatus('checking');
+      
+      try {
+        // Force check extension availability
+        const available = await ExtensionService.forceCheckAvailability();
+        
+        if (mounted) {
+          setExtensionStatus(available ? 'available' : 'unavailable');
+          console.log('📱 Extension status updated:', available ? 'available' : 'unavailable');
+        }
+      } catch (error) {
+        console.error('❌ Extension status check failed:', error);
+        if (mounted) {
+          setExtensionStatus('unavailable');
+        }
+      }
+    };
+
+    // Check immediately
+    checkExtensionStatus();
+
+    // Set up periodic checks
+    const interval = setInterval(checkExtensionStatus, 3000);
+
+    // Listen for extension ready events
+    const handleExtensionReady = () => {
+      console.log('✅ Extension ready event received');
+      if (mounted) {
+        setExtensionStatus('available');
+      }
+    };
+
+    window.addEventListener('bookmarkExtensionReady', handleExtensionReady);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      window.removeEventListener('bookmarkExtensionReady', handleExtensionReady);
     };
   }, []);
 
@@ -147,14 +195,15 @@ const BookmarkManager: React.FC = () => {
   };
 
   const handleSyncWithExtension = async () => {
-    if (!extensionAvailable) {
-      showError('Extension Not Available', 'Chrome extension is not installed or not responding');
-      return;
-    }
-
     console.log('🔄 Starting manual sync process...');
     console.log('User ID:', user?.id);
     console.log('Extension available:', extensionAvailable);
+    console.log('Extension status:', extensionStatus);
+
+    if (extensionStatus !== 'available') {
+      showError('Extension Not Available', 'Chrome extension is not installed or not responding. Please install the extension and refresh the page.');
+      return;
+    }
 
     const loadingToastId = showLoading('Syncing Bookmarks', 'Initializing sync...');
 
@@ -291,6 +340,7 @@ const BookmarkManager: React.FC = () => {
     console.log('🐛 DEBUG SYNC: Starting detailed sync analysis...');
     console.log('🐛 User:', user);
     console.log('🐛 Extension available:', extensionAvailable);
+    console.log('🐛 Extension status:', extensionStatus);
     
     // Check prerequisites
     if (!user) {
@@ -299,9 +349,9 @@ const BookmarkManager: React.FC = () => {
       return;
     }
     
-    if (!extensionAvailable) {
-      console.error('🐛 DEBUG SYNC: Extension not available');
-      showError('Debug Sync Failed', 'Chrome extension not available');
+    if (extensionStatus !== 'available') {
+      console.error('🐛 DEBUG SYNC: Extension not available, status:', extensionStatus);
+      showError('Debug Sync Failed', `Chrome extension not available (status: ${extensionStatus})`);
       return;
     }
 
@@ -310,7 +360,7 @@ const BookmarkManager: React.FC = () => {
     try {
       // Test extension connection first
       console.log('🐛 Testing extension connection...');
-      const extTest = await BookmarkService.testExtensionConnection();
+      const extTest = await ExtensionService.testConnection();
       console.log('🐛 Extension test result:', extTest);
       
       if (!extTest.success) {
@@ -397,12 +447,18 @@ const BookmarkManager: React.FC = () => {
                       connectionStatus === 'disconnected' ? 'bg-red-500' : 'bg-yellow-500'
                     }`} />
                   </div>
-                  {extensionAvailable && (
-                    <div className="flex items-center text-green-600">
-                      <Chrome className="w-4 h-4 mr-1" />
-                      <span>Chrome Extension</span>
-                    </div>
-                  )}
+                  <div className="flex items-center">
+                    <Chrome className="w-4 h-4 mr-1" />
+                    <span>Chrome Extension</span>
+                    <div className={`w-2 h-2 rounded-full ml-2 ${
+                      extensionStatus === 'available' ? 'bg-green-500' :
+                      extensionStatus === 'unavailable' ? 'bg-red-500' : 'bg-yellow-500'
+                    }`} />
+                    <span className="ml-1 text-xs">
+                      {extensionStatus === 'checking' ? 'Checking...' :
+                       extensionStatus === 'available' ? 'Connected' : 'Not Available'}
+                    </span>
+                  </div>
                   {syncStatus && (
                     <div className="flex items-center text-blue-600">
                       <Clock className="w-4 h-4 mr-1" />
@@ -445,7 +501,7 @@ const BookmarkManager: React.FC = () => {
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
-              {extensionAvailable && (
+              {extensionStatus === 'available' && (
                 <button
                   onClick={handleSyncWithExtension}
                   disabled={loading}
@@ -469,13 +525,13 @@ const BookmarkManager: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <StatusCards 
           connectionStatus={connectionStatus}
-          extensionAvailable={extensionAvailable}
+          extensionAvailable={extensionStatus === 'available'}
           lastSyncResult={lastSyncResult}
         />
 
         <DebugPanel 
           user={user}
-          extensionAvailable={extensionAvailable}
+          extensionAvailable={extensionStatus === 'available'}
           bookmarks={bookmarks}
           loading={loading}
           error={error}
@@ -527,7 +583,7 @@ const BookmarkManager: React.FC = () => {
         <BookmarkGrid
           bookmarks={filteredBookmarks}
           onRemoveBookmark={handleRemoveBookmark}
-          extensionAvailable={extensionAvailable}
+          extensionAvailable={extensionStatus === 'available'}
           onSyncWithExtension={handleSyncWithExtension}
           loading={loading}
         />
