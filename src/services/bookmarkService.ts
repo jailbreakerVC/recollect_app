@@ -7,51 +7,19 @@ export class BookmarkService {
   private static async setUserContext(userId: string): Promise<void> {
     console.log('🔐 Setting user context for:', userId);
     
+    // Since RLS is disabled, we don't need to set context, but we'll keep this for future use
     try {
-      // Use our improved user context function
       const { error } = await supabase.rpc('set_app_user_context', {
         user_id: userId
       });
 
       if (error) {
-        console.warn('Failed to set user context via set_app_user_context:', error.message);
-        
-        // Fallback: try the alternative method
-        try {
-          const { error: fallbackError } = await supabase.rpc('set_user_context', { 
-            user_id: userId 
-          });
-          
-          if (fallbackError) {
-            console.warn('Fallback user context also failed:', fallbackError.message);
-          } else {
-            console.log('✅ User context set via fallback method');
-          }
-        } catch (fallbackErr) {
-          console.warn('Fallback user context error:', fallbackErr);
-        }
+        console.warn('User context function not available (RLS disabled):', error.message);
       } else {
         console.log('✅ User context set successfully');
       }
     } catch (err) {
-      console.warn('User context RPC error:', err);
-      
-      // Last resort: try direct config setting
-      try {
-        const { error: configError } = await supabase.rpc('set_config', {
-          setting_name: 'app.current_user_id',
-          setting_value: userId,
-          is_local: true
-        });
-        
-        if (configError) {
-          console.warn('Direct config setting failed:', configError.message);
-        } else {
-          console.log('✅ User context set via direct config');
-        }
-      } catch (configErr) {
-        console.warn('All user context methods failed:', configErr);
-      }
+      console.warn('User context RPC not available (RLS disabled):', err);
     }
   }
 
@@ -60,33 +28,30 @@ export class BookmarkService {
    */
   static async debugUserContext(): Promise<any> {
     try {
-      // Try the function without parameters first
       const { data, error } = await supabase.rpc('debug_user_context');
       
       if (error) {
-        console.error('Debug context error:', error);
+        console.warn('Debug context error:', error);
         
-        // If the function doesn't exist, return basic debug info
-        if (error.message.includes('function') && error.message.includes('does not exist')) {
-          return {
-            error: 'Debug function not available',
-            fallback_info: {
-              supabase_url: !!import.meta.env.VITE_SUPABASE_URL,
-              supabase_key: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
-              timestamp: new Date().toISOString()
-            }
-          };
-        }
-        
-        return { error: error.message };
+        // Return basic debug info if function doesn't exist
+        return {
+          error: 'Debug function not available',
+          rls_disabled: true,
+          fallback_info: {
+            supabase_url: !!import.meta.env.VITE_SUPABASE_URL,
+            supabase_key: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+            timestamp: new Date().toISOString()
+          }
+        };
       }
       
       console.log('🔍 User context debug:', data);
       return data;
     } catch (err) {
-      console.error('Debug context failed:', err);
+      console.warn('Debug context failed:', err);
       return { 
         error: 'Debug function call failed',
+        rls_disabled: true,
         details: err instanceof Error ? err.message : 'Unknown error'
       };
     }
@@ -98,18 +63,14 @@ export class BookmarkService {
   static async getBookmarks(userId: string): Promise<DatabaseBookmark[]> {
     console.log('📚 Fetching bookmarks for user:', userId);
     
-    // Set user context for RLS
+    // Set user context (even though RLS is disabled, for future compatibility)
     await this.setUserContext(userId);
-    
-    // Debug context in development
-    if (process.env.NODE_ENV === 'development') {
-      const debug = await this.debugUserContext();
-      console.log('Debug context after setting:', debug);
-    }
 
+    // Since RLS is disabled, we need to filter by user_id manually
     const { data, error } = await supabase
       .from('bookmarks')
       .select('*')
+      .eq('user_id', userId)
       .order('date_added', { ascending: false });
 
     if (error) {
@@ -117,7 +78,7 @@ export class BookmarkService {
       throw new Error(`Failed to fetch bookmarks: ${error.message}`);
     }
 
-    console.log(`✅ Fetched ${data?.length || 0} bookmarks`);
+    console.log(`✅ Fetched ${data?.length || 0} bookmarks for user ${userId}`);
     return data || [];
   }
 
@@ -131,11 +92,8 @@ export class BookmarkService {
     folder?: string,
     chromeBookmarkId?: string
   ): Promise<DatabaseBookmark> {
-    console.log('➕ Adding bookmark:', { title, url, folder, chromeBookmarkId });
+    console.log('➕ Adding bookmark:', { userId, title, url, folder, chromeBookmarkId });
     
-    // Set user context for RLS
-    await this.setUserContext(userId);
-
     const bookmarkData = {
       user_id: userId,
       title,
@@ -155,12 +113,12 @@ export class BookmarkService {
 
     if (error) {
       console.error('❌ Failed to add bookmark:', error);
-      
-      // Debug context on error
-      if (process.env.NODE_ENV === 'development') {
-        const debug = await this.debugUserContext();
-        console.log('Debug context on error:', debug);
-      }
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
       
       throw new Error(`Failed to add bookmark: ${error.message}`);
     }
@@ -178,14 +136,12 @@ export class BookmarkService {
     updates: Partial<DatabaseBookmark>
   ): Promise<DatabaseBookmark> {
     console.log('📝 Updating bookmark:', bookmarkId, updates);
-    
-    // Set user context for RLS
-    await this.setUserContext(userId);
 
     const { data, error } = await supabase
       .from('bookmarks')
       .update(updates)
       .eq('id', bookmarkId)
+      .eq('user_id', userId) // Extra safety even with RLS disabled
       .select()
       .single();
 
@@ -203,14 +159,12 @@ export class BookmarkService {
    */
   static async removeBookmark(bookmarkId: string, userId: string): Promise<void> {
     console.log('🗑️ Removing bookmark:', bookmarkId);
-    
-    // Set user context for RLS
-    await this.setUserContext(userId);
 
     const { error } = await supabase
       .from('bookmarks')
       .delete()
-      .eq('id', bookmarkId);
+      .eq('id', bookmarkId)
+      .eq('user_id', userId); // Extra safety even with RLS disabled
 
     if (error) {
       console.error('❌ Failed to remove bookmark:', error);
@@ -227,19 +181,21 @@ export class BookmarkService {
     chromeBookmarkId: string,
     userId: string
   ): Promise<DatabaseBookmark | null> {
-    // Set user context for RLS
-    await this.setUserContext(userId);
+    console.log('🔍 Looking for bookmark with Chrome ID:', chromeBookmarkId, 'for user:', userId);
 
     const { data, error } = await supabase
       .from('bookmarks')
       .select('*')
       .eq('chrome_bookmark_id', chromeBookmarkId)
+      .eq('user_id', userId)
       .single();
 
     if (error && error.code !== 'PGRST116') {
+      console.error('❌ Failed to fetch bookmark by Chrome ID:', error);
       throw new Error(`Failed to fetch bookmark: ${error.message}`);
     }
 
+    console.log('🔍 Bookmark by Chrome ID result:', data ? 'Found' : 'Not found');
     return data || null;
   }
 
@@ -257,21 +213,18 @@ export class BookmarkService {
 
     console.log(`📦 Bulk inserting ${bookmarks.length} bookmarks for user:`, userId);
     
-    // Set user context for RLS
-    await this.setUserContext(userId);
-
-    // Debug context before bulk insert
-    if (process.env.NODE_ENV === 'development') {
-      const debug = await this.debugUserContext();
-      console.log('Debug context before bulk insert:', debug);
-    }
+    // Ensure all bookmarks have the correct user_id
+    const bookmarksWithUserId = bookmarks.map(bookmark => ({
+      ...bookmark,
+      user_id: userId // Ensure user_id is set correctly
+    }));
 
     // Log the first few bookmarks for debugging
-    console.log('Sample bookmarks to insert:', bookmarks.slice(0, 3));
+    console.log('Sample bookmarks to insert:', bookmarksWithUserId.slice(0, 3));
 
     const { data, error } = await supabase
       .from('bookmarks')
-      .insert(bookmarks)
+      .insert(bookmarksWithUserId)
       .select();
 
     if (error) {
@@ -282,12 +235,6 @@ export class BookmarkService {
         details: error.details,
         hint: error.hint
       });
-      
-      // Debug context on error
-      if (process.env.NODE_ENV === 'development') {
-        const debug = await this.debugUserContext();
-        console.log('Debug context on bulk insert error:', debug);
-      }
       
       throw new Error(`Failed to bulk insert bookmarks: ${error.message}`);
     }
@@ -309,14 +256,13 @@ export class BookmarkService {
     }
 
     console.log(`🗑️ Removing ${chromeBookmarkIds.length} bookmarks by Chrome IDs for user:`, userId);
-    
-    // Set user context for RLS
-    await this.setUserContext(userId);
+    console.log('Chrome IDs to remove:', chromeBookmarkIds);
 
     const { error } = await supabase
       .from('bookmarks')
       .delete()
-      .in('chrome_bookmark_id', chromeBookmarkIds);
+      .in('chrome_bookmark_id', chromeBookmarkIds)
+      .eq('user_id', userId); // Extra safety even with RLS disabled
 
     if (error) {
       console.error('❌ Failed to remove bookmarks:', error);
@@ -348,29 +294,26 @@ export class BookmarkService {
       
       console.log('✅ Database ping successful');
       
-      // Set user context
-      await this.setUserContext(userId);
+      // Test user-specific query
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('count', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      
+      if (error) {
+        return {
+          success: false,
+          message: `User query failed: ${error.message}`
+        };
+      }
       
       // Get debug info
       const debug = await this.debugUserContext();
       console.log('Connection test debug:', debug);
       
-      // Try a user-specific query
-      const { data, error } = await supabase
-        .from('bookmarks')
-        .select('count', { count: 'exact', head: true });
-      
-      if (error) {
-        return {
-          success: false,
-          message: `User query failed: ${error.message}`,
-          debug
-        };
-      }
-      
       return {
         success: true,
-        message: `Database connection successful. User context set for ${userId}`,
+        message: `Database connection successful. Found bookmarks for user ${userId}`,
         debug
       };
       
@@ -396,6 +339,27 @@ export class BookmarkService {
       return !error;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Get all bookmarks count for debugging
+   */
+  static async getAllBookmarksCount(): Promise<number> {
+    try {
+      const { count, error } = await supabase
+        .from('bookmarks')
+        .select('*', { count: 'exact', head: true });
+      
+      if (error) {
+        console.error('Failed to get bookmarks count:', error);
+        return 0;
+      }
+      
+      return count || 0;
+    } catch (err) {
+      console.error('Error getting bookmarks count:', err);
+      return 0;
     }
   }
 }

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Bug, TestTube } from 'lucide-react';
+import { Bug, TestTube, Database } from 'lucide-react';
 import { ExtensionService } from '../services/extensionService';
+import { BookmarkService } from '../services/bookmarkService';
 import { DatabaseBookmark } from '../lib/supabase';
 
 interface DebugPanelProps {
@@ -28,6 +29,24 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({
   onTestConnection,
   onDebugRefresh
 }) => {
+  const [totalBookmarksCount, setTotalBookmarksCount] = React.useState<number | null>(null);
+
+  // Get total bookmarks count for debugging
+  React.useEffect(() => {
+    const getTotalCount = async () => {
+      try {
+        const count = await BookmarkService.getAllBookmarksCount();
+        setTotalBookmarksCount(count);
+      } catch (err) {
+        console.error('Failed to get total bookmarks count:', err);
+      }
+    };
+
+    if (connectionStatus === 'connected') {
+      getTotalCount();
+    }
+  }, [connectionStatus, bookmarks.length]);
+
   if (process.env.NODE_ENV !== 'development') {
     return null;
   }
@@ -54,21 +73,45 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({
         </div>
       </div>
       <div className="text-sm text-gray-600 space-y-1">
-        <div>Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? '✅ Set' : '❌ Missing'}</div>
-        <div>Supabase Key: {import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing'}</div>
-        <div>User ID: {user?.id || 'Not logged in'}</div>
-        <div>Extension Available: {extensionAvailable ? 'Yes' : 'No'}</div>
-        <div>Extension Flag: {(window as any).bookmarkExtensionAvailable ? 'Set' : 'Not Set'}</div>
-        <div>Extension Service: {ExtensionService ? 'Loaded' : 'Not Loaded'}</div>
-        <div>Bookmarks Count: {bookmarks.length}</div>
-        <div>Loading: {loading ? 'Yes' : 'No'}</div>
-        <div>Error: {error || 'None'}</div>
-        <div>Sync Status: {syncStatus || 'None'}</div>
-        <div>Connection Status: {connectionStatus}</div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <div className="font-medium text-gray-700 mb-1">Environment</div>
+            <div>Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? '✅ Set' : '❌ Missing'}</div>
+            <div>Supabase Key: {import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing'}</div>
+            <div>User ID: {user?.id || 'Not logged in'}</div>
+            <div>Connection Status: {connectionStatus}</div>
+          </div>
+          <div>
+            <div className="font-medium text-gray-700 mb-1">Extension</div>
+            <div>Extension Available: {extensionAvailable ? 'Yes' : 'No'}</div>
+            <div>Extension Flag: {(window as any).bookmarkExtensionAvailable ? 'Set' : 'Not Set'}</div>
+            <div>Extension Service: {ExtensionService ? 'Loaded' : 'Not Loaded'}</div>
+          </div>
+        </div>
+        
+        <div className="border-t border-gray-300 pt-2 mt-2">
+          <div className="font-medium text-gray-700 mb-1">Data Status</div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div>User Bookmarks: {bookmarks.length}</div>
+              <div>Loading: {loading ? 'Yes' : 'No'}</div>
+              <div>Error: {error || 'None'}</div>
+            </div>
+            <div>
+              <div>Total DB Bookmarks: {totalBookmarksCount !== null ? totalBookmarksCount : 'Loading...'}</div>
+              <div>Sync Status: {syncStatus || 'None'}</div>
+              <div>RLS Status: Disabled (Dev Mode)</div>
+            </div>
+          </div>
+        </div>
+        
         {debugInfo && (
-          <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-            <div className="font-medium mb-1">User Context Debug:</div>
-            <pre className="whitespace-pre-wrap">{JSON.stringify(debugInfo, null, 2)}</pre>
+          <div className="mt-2 p-2 bg-gray-100 rounded text-xs border-t border-gray-300">
+            <div className="font-medium mb-1 flex items-center">
+              <Database className="w-3 h-3 mr-1" />
+              Database Debug Info:
+            </div>
+            <pre className="whitespace-pre-wrap overflow-x-auto">{JSON.stringify(debugInfo, null, 2)}</pre>
           </div>
         )}
       </div>
