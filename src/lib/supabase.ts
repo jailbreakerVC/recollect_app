@@ -23,17 +23,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
   },
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
+    persistSession: false, // We're handling our own auth
+    autoRefreshToken: false,
   },
 });
 
 // Test connection on initialization
-supabase.auth.getSession().then(({ data: { session }, error }) => {
+supabase.from('bookmarks').select('count', { count: 'exact', head: true }).then(({ error }) => {
   if (error) {
-    console.error('Supabase auth error:', error);
+    console.error('Supabase connection test failed:', error);
   } else {
-    console.log('Supabase client initialized successfully', session ? 'with session' : 'without session');
+    console.log('Supabase client initialized and connected successfully');
   }
 });
 
@@ -49,3 +49,32 @@ export interface DatabaseBookmark {
   created_at: string;
   updated_at: string;
 }
+
+// Helper function to create a custom JWT token for RLS
+export const createCustomToken = (userId: string) => {
+  // Create a simple JWT-like structure for RLS
+  // In production, this should be done server-side with proper JWT signing
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = btoa(JSON.stringify({ 
+    sub: userId,
+    aud: 'authenticated',
+    role: 'authenticated',
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 3600 // 1 hour
+  }));
+  
+  return `${header}.${payload}.signature`;
+};
+
+// Set custom auth context for RLS
+export const setAuthContext = async (userId: string) => {
+  try {
+    // Set the user context for RLS policies
+    const { error } = await supabase.rpc('set_user_context', { user_id: userId });
+    if (error) {
+      console.warn('Could not set user context:', error);
+    }
+  } catch (err) {
+    console.warn('RPC set_user_context not available, using direct queries');
+  }
+};

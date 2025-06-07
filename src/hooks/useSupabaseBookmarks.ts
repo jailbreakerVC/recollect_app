@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, DatabaseBookmark } from '../lib/supabase';
+import { supabase, DatabaseBookmark, setAuthContext } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -49,6 +49,14 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     return () => window.removeEventListener('bookmarkExtensionReady', handleExtensionReady);
   }, []);
 
+  // Set auth context when user changes
+  useEffect(() => {
+    if (user?.id) {
+      console.log('Setting auth context for user:', user.id);
+      setAuthContext(user.id);
+    }
+  }, [user?.id]);
+
   // Load bookmarks from Supabase
   const loadBookmarks = useCallback(async () => {
     if (!user) return;
@@ -58,6 +66,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
     try {
       console.log('Loading bookmarks for user:', user.id);
+      
+      // Set user context before querying
+      await setAuthContext(user.id);
       
       const { data, error: supabaseError } = await supabase
         .from('bookmarks')
@@ -239,6 +250,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     try {
       console.log('Starting sync with Chrome extension...');
       
+      // Set user context before operations
+      await setAuthContext(user.id);
+      
       // Get bookmarks from Chrome extension
       const response = await sendMessageToExtension({ action: 'getBookmarks' });
       const extensionBookmarks: ExtensionBookmark[] = response.bookmarks || [];
@@ -256,7 +270,8 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
       );
 
       // Prepare bookmarks to insert/update
-      const bookmarksToUpsert: Partial<DatabaseBookmark>[] = [];
+      const bookmarksToInsert: Partial<DatabaseBookmark>[] = [];
+      const bookmarksToUpdate: { id: string; updates: Partial<DatabaseBookmark> }[] = [];
 
       for (const extBookmark of extensionBookmarks) {
         const existing = existingMap.get(extBookmark.id);
@@ -278,26 +293,44 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
             existing.url !== extBookmark.url ||
             existing.folder !== extBookmark.folder
           ) {
-            bookmarkData.id = existing.id;
-            bookmarksToUpsert.push(bookmarkData);
+            bookmarksToUpdate.push({
+              id: existing.id,
+              updates: {
+                title: extBookmark.title,
+                url: extBookmark.url,
+                folder: extBookmark.folder,
+                parent_id: extBookmark.parentId,
+              }
+            });
           }
         } else {
           // New bookmark
-          bookmarksToUpsert.push(bookmarkData);
+          bookmarksToInsert.push(bookmarkData);
         }
       }
 
-      // Batch upsert bookmarks
-      if (bookmarksToUpsert.length > 0) {
-        console.log(`Upserting ${bookmarksToUpsert.length} bookmarks`);
-        const { error: upsertError } = await supabase
+      // Insert new bookmarks
+      if (bookmarksToInsert.length > 0) {
+        console.log(`Inserting ${bookmarksToInsert.length} new bookmarks`);
+        const { error: insertError } = await supabase
           .from('bookmarks')
-          .upsert(bookmarksToUpsert, { 
-            onConflict: 'chrome_bookmark_id',
-            ignoreDuplicates: false 
-          });
+          .insert(bookmarksToInsert);
 
-        if (upsertError) throw upsertError;
+        if (insertError) throw insertError;
+      }
+
+      // Update existing bookmarks
+      for (const { id, updates } of bookmarksToUpdate) {
+        const { error: updateError } = await supabase
+          .from('bookmarks')
+          .update(updates)
+          .eq('id', id);
+
+        if (updateError) throw updateError;
+      }
+
+      if (bookmarksToUpdate.length > 0) {
+        console.log(`Updated ${bookmarksToUpdate.length} existing bookmarks`);
       }
 
       // Remove bookmarks that no longer exist in Chrome
@@ -333,6 +366,9 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
     try {
       console.log('Adding bookmark:', { title, url, folder });
+      
+      // Set user context before operations
+      await setAuthContext(user.id);
       
       const { error } = await supabase
         .from('bookmarks')
@@ -371,18 +407,23 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     try {
       console.log('Removing bookmark:', id);
       
+      // Set user context before operations
+      await setAuthContext(user.id);
+      
       // Get bookmark details first
       const { data: bookmark } = await supabase
         .from('bookmarks')
         .select('chrome_bookmark_id')
         .eq('id', id)
+        .eq('user_id', user.id)
         .single();
 
       // Remove from database
       const { error } = await supabase
         .from('bookmarks')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -410,10 +451,14 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     try {
       console.log('Updating bookmark:', id, updates);
       
+      // Set user context before operations
+      await setAuthContext(user.id);
+      
       const { error } = await supabase
         .from('bookmarks')
         .update(updates)
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', user.id);
 
       if (error) throw error;
     } catch (err) {
