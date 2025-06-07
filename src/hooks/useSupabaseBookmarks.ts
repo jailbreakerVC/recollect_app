@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, DatabaseBookmark } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface ExtensionBookmark {
   id: string;
@@ -30,6 +31,7 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
   const [error, setError] = useState<string | null>(null);
   const [extensionAvailable, setExtensionAvailable] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
 
   // Check if extension is available
   useEffect(() => {
@@ -55,13 +57,20 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
     setError(null);
 
     try {
+      console.log('Loading bookmarks for user:', user.id);
+      
       const { data, error: supabaseError } = await supabase
         .from('bookmarks')
         .select('*')
         .eq('user_id', user.id)
         .order('date_added', { ascending: false });
 
-      if (supabaseError) throw supabaseError;
+      if (supabaseError) {
+        console.error('Supabase query error:', supabaseError);
+        throw supabaseError;
+      }
+      
+      console.log(`Loaded ${data?.length || 0} bookmarks`);
       setBookmarks(data || []);
     } catch (err) {
       console.error('Error loading bookmarks:', err);
@@ -73,24 +82,41 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
 
   // Load bookmarks when user changes
   useEffect(() => {
-    loadBookmarks();
-  }, [loadBookmarks]);
+    if (user) {
+      loadBookmarks();
+    } else {
+      setBookmarks([]);
+    }
+  }, [loadBookmarks, user]);
 
-  // Set up real-time subscription with enhanced error handling
+  // Set up real-time subscription with proper cleanup
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      // Clean up existing channel if user logs out
+      if (realtimeChannel) {
+        console.log('Cleaning up existing channel - user logged out');
+        supabase.removeChannel(realtimeChannel);
+        setRealtimeChannel(null);
+        setConnectionStatus('disconnected');
+      }
+      return;
+    }
 
     console.log('Setting up Supabase real-time subscription for user:', user.id);
     setConnectionStatus('connecting');
 
-    const channel = supabase.channel(`bookmarks_${user.id}`, {
+    // Create a unique channel name to avoid conflicts
+    const channelName = `bookmarks_${user.id}_${Date.now()}`;
+    
+    const channel = supabase.channel(channelName, {
       config: {
-        broadcast: { self: true },
+        broadcast: { self: false },
         presence: { key: user.id }
       }
     });
 
-    const subscription = channel
+    // Set up postgres changes listener
+    channel
       .on(
         'postgres_changes',
         {
@@ -101,11 +127,12 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
         },
         (payload) => {
           console.log('Real-time bookmark change detected:', payload);
+          // Reload bookmarks when changes occur
           loadBookmarks();
         }
       )
       .subscribe((status, err) => {
-        console.log('Subscription status:', status);
+        console.log('Subscription status changed:', status);
         setConnectionStatus(status);
         
         if (err) {
@@ -113,24 +140,37 @@ export const useSupabaseBookmarks = (): UseSupabaseBookmarksReturn => {
           setError(`Real-time connection error: ${err.message}`);
         }
         
-        if (status === 'SUBSCRIBED') {
-          console.log('Successfully subscribed to real-time updates');
-          setError(null);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('Channel error occurred');
-          setError('Real-time connection failed. Updates may be delayed.');
-        } else if (status === 'TIMED_OUT') {
-          console.error('Subscription timed out');
-          setError('Real-time connection timed out. Retrying...');
-        } else if (status === 'CLOSED') {
-          console.log('Subscription closed');
-          setConnectionStatus('disconnected');
+        switch (status) {
+          case 'SUBSCRIBED':
+            console.log('✅ Successfully subscribed to real-time updates');
+            setError(null);
+            break;
+          case 'CHANNEL_ERROR':
+            console.error('❌ Channel error occurred');
+            setError('Real-time connection failed. Updates may be delayed.');
+            break;
+          case 'TIMED_OUT':
+            console.error('⏰ Subscription timed out');
+            setError('Real-time connection timed out. Retrying...');
+            break;
+          case 'CLOSED':
+            console.log('🔒 Subscription closed');
+            setConnectionStatus('disconnected');
+            break;
+          default:
+            console.log('🔄 Connection status:', status);
         }
       });
 
+    setRealtimeChannel(channel);
+
+    // Cleanup function
     return () => {
-      console.log('Cleaning up subscription');
-      subscription.unsubscribe();
+      console.log('Cleaning up real-time subscription');
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+      setRealtimeChannel(null);
       setConnectionStatus('disconnected');
     };
   }, [user, loadBookmarks]);

@@ -28,19 +28,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// Test connection and log status
-supabase.realtime.connect();
-
-supabase.realtime.onOpen(() => {
-  console.log('✅ Supabase Realtime connection opened');
-});
-
-supabase.realtime.onClose(() => {
-  console.log('❌ Supabase Realtime connection closed');
-});
-
-supabase.realtime.onError((error) => {
-  console.error('🚨 Supabase Realtime error:', error);
+// Test connection on initialization
+supabase.auth.getSession().then(({ data: { session }, error }) => {
+  if (error) {
+    console.error('Supabase auth error:', error);
+  } else {
+    console.log('Supabase client initialized successfully', session ? 'with session' : 'without session');
+  }
 });
 
 export interface DatabaseBookmark {
