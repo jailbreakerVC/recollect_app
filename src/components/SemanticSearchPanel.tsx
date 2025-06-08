@@ -69,11 +69,11 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
   const getSearchTypeIcon = (searchType: string) => {
     switch (searchType) {
       case 'semantic':
-        return <Brain className="w-3 h-3 text-purple-600" title="Semantic search" />;
+        return <Brain className="w-3 h-3 text-purple-600\" title="Semantic search" />;
       case 'trigram':
-        return <Search className="w-3 h-3 text-blue-600" title="Text similarity" />;
+        return <Search className="w-3 h-3 text-blue-600\" title="Text similarity" />;
       default:
-        return <Search className="w-3 h-3 text-gray-600" title="Fallback search" />;
+        return <Search className="w-3 h-3 text-gray-600\" title="Fallback search" />;
     }
   };
 
@@ -227,11 +227,11 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
   const getSearchTypeIcon = (searchType: string) => {
     switch (searchType) {
       case 'semantic':
-        return <Brain className="w-3 h-3 text-purple-600" title="Semantic search" />;
+        return <Brain className="w-3 h-3 text-purple-600\" title="Semantic search" />;
       case 'trigram':
-        return <Search className="w-3 h-3 text-blue-600" title="Text similarity" />;
+        return <Search className="w-3 h-3 text-blue-600\" title="Text similarity" />;
       default:
-        return <Search className="w-3 h-3 text-gray-600" title="Fallback search" />;
+        return <Search className="w-3 h-3 text-gray-600\" title="Fallback search" />;
     }
   };
 
