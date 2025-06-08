@@ -1,20 +1,23 @@
-// Chrome Extension Background Script - Refactored for better reliability
+// Chrome Extension Background Script - Enhanced with Contextual Search
 class BackgroundManager {
   constructor() {
+    this.contextualSearchEnabled = true;
+    this.lastPageContext = null;
+    this.searchCache = new Map();
+    
     this.init();
   }
 
-  // Initialize background script
   init() {
-    console.log('🚀 Background script initializing...');
+    console.log('🚀 Background script initializing with contextual search...');
     
     this.setupEventListeners();
     this.setupBookmarkListeners();
+    this.setupContextualSearch();
     
     console.log('✅ Background script initialized successfully');
   }
 
-  // Set up event listeners
   setupEventListeners() {
     // Handle extension installation
     chrome.runtime.onInstalled.addListener((details) => {
@@ -37,19 +40,153 @@ class BackgroundManager {
     });
   }
 
-  // Handle extension installation
-  handleInstallation(details) {
-    console.log('Bookmark Manager Extension installed:', details.reason);
+  setupContextualSearch() {
+    console.log('🔍 Setting up contextual search...');
     
-    if (details.reason === 'install') {
-      // Open welcome page on first install
-      chrome.tabs.create({
-        url: 'http://localhost:5173'
+    // Listen for tab updates to trigger contextual search
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      if (changeInfo.status === 'complete' && tab.url && this.isValidUrl(tab.url)) {
+        this.handleTabUpdate(tabId, tab);
+      }
+    });
+
+    // Listen for tab activation
+    chrome.tabs.onActivated.addListener((activeInfo) => {
+      chrome.tabs.get(activeInfo.tabId, (tab) => {
+        if (tab.url && this.isValidUrl(tab.url)) {
+          this.handleTabActivation(activeInfo.tabId, tab);
+        }
       });
+    });
+  }
+
+  isValidUrl(url) {
+    return url && 
+           !url.startsWith('chrome://') && 
+           !url.startsWith('chrome-extension://') &&
+           !url.startsWith('moz-extension://') &&
+           !url.startsWith('about:') &&
+           (url.startsWith('http://') || url.startsWith('https://'));
+  }
+
+  async handleTabUpdate(tabId, tab) {
+    if (!this.contextualSearchEnabled) return;
+
+    try {
+      // Inject contextual search script if not already present
+      await this.injectContextualSearchScript(tabId);
+      
+      // Small delay to let the page load
+      setTimeout(() => {
+        this.requestPageContext(tabId);
+      }, 1000);
+      
+    } catch (error) {
+      console.log('Could not inject contextual search script:', error.message);
     }
   }
 
-  // Handle messages
+  async handleTabActivation(tabId, tab) {
+    if (!this.contextualSearchEnabled) return;
+
+    try {
+      // Request page context for the activated tab
+      this.requestPageContext(tabId);
+    } catch (error) {
+      console.log('Could not get context for activated tab:', error.message);
+    }
+  }
+
+  async injectContextualSearchScript(tabId) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['contextual-search.js']
+      });
+      console.log('✅ Contextual search script injected into tab:', tabId);
+    } catch (error) {
+      console.log('⚠️ Failed to inject contextual search script:', error.message);
+      throw error;
+    }
+  }
+
+  async requestPageContext(tabId) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        action: 'getPageContext'
+      });
+
+      if (response?.success && response.context) {
+        this.lastPageContext = response.context;
+        console.log('📄 Page context received:', response.context);
+        
+        // Trigger contextual search
+        this.performContextualSearch(tabId, response.context);
+      }
+    } catch (error) {
+      console.log('Could not get page context:', error.message);
+    }
+  }
+
+  async performContextualSearch(tabId, context) {
+    try {
+      // Check cache first
+      const cacheKey = `${context.domain}_${context.title}`;
+      if (this.searchCache.has(cacheKey)) {
+        console.log('🔍 Using cached search results for:', context.title);
+        return;
+      }
+
+      console.log('🔍 Performing contextual search for:', context.title);
+      
+      // Send search request to content script
+      const response = await chrome.tabs.sendMessage(tabId, {
+        action: 'searchRelatedBookmarks',
+        context: context
+      });
+
+      if (response?.success && response.results) {
+        console.log(`✅ Found ${response.results.length} related bookmarks`);
+        
+        // Cache results for 5 minutes
+        this.searchCache.set(cacheKey, {
+          results: response.results,
+          timestamp: Date.now()
+        });
+        
+        // Clean old cache entries
+        this.cleanSearchCache();
+        
+        // Notify popup if it's open
+        this.notifyPopupOfSearchResults(response.results, context);
+      }
+    } catch (error) {
+      console.log('Contextual search failed:', error.message);
+    }
+  }
+
+  cleanSearchCache() {
+    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+    
+    for (const [key, value] of this.searchCache.entries()) {
+      if (value.timestamp < fiveMinutesAgo) {
+        this.searchCache.delete(key);
+      }
+    }
+  }
+
+  notifyPopupOfSearchResults(results, context) {
+    // Try to notify popup
+    chrome.runtime.sendMessage({
+      action: 'contextualSearchResults',
+      results: results,
+      context: context
+    }).catch(() => {
+      // Popup not open, that's fine
+      console.log('Popup not open to receive search results');
+    });
+  }
+
   handleMessage(request, sender, sendResponse) {
     console.log('Background received message:', request);
     
@@ -62,13 +199,63 @@ class BackgroundManager {
         return this.handleRemoveBookmark(request, sendResponse);
       case 'syncComplete':
         return this.handleSyncComplete(request, sendResponse);
+      case 'pageContextChanged':
+        return this.handlePageContextChanged(request, sendResponse);
+      case 'getContextualSearchResults':
+        return this.handleGetContextualSearchResults(sendResponse);
+      case 'toggleContextualSearch':
+        return this.handleToggleContextualSearch(request, sendResponse);
       default:
         sendResponse({ success: false, error: 'Unknown action' });
         return false;
     }
   }
 
-  // Get all bookmarks
+  handlePageContextChanged(request, sendResponse) {
+    this.lastPageContext = request.context;
+    console.log('📄 Page context updated:', request.context);
+    sendResponse({ success: true });
+    return false;
+  }
+
+  handleGetContextualSearchResults(sendResponse) {
+    const cacheKey = this.lastPageContext ? 
+      `${this.lastPageContext.domain}_${this.lastPageContext.title}` : null;
+    
+    const cachedResults = cacheKey ? this.searchCache.get(cacheKey) : null;
+    
+    sendResponse({
+      success: true,
+      results: cachedResults?.results || [],
+      context: this.lastPageContext,
+      cached: !!cachedResults
+    });
+    
+    return false;
+  }
+
+  handleToggleContextualSearch(request, sendResponse) {
+    this.contextualSearchEnabled = request.enabled;
+    console.log('🔍 Contextual search:', this.contextualSearchEnabled ? 'enabled' : 'disabled');
+    
+    sendResponse({ 
+      success: true, 
+      enabled: this.contextualSearchEnabled 
+    });
+    
+    return false;
+  }
+
+  handleInstallation(details) {
+    console.log('Bookmark Manager Extension installed:', details.reason);
+    
+    if (details.reason === 'install') {
+      chrome.tabs.create({
+        url: 'http://localhost:5173'
+      });
+    }
+  }
+
   handleGetBookmarks(sendResponse) {
     try {
       chrome.bookmarks.getTree((bookmarkTree) => {
@@ -97,10 +284,9 @@ class BackgroundManager {
       });
     }
     
-    return true; // Keep message channel open
+    return true;
   }
 
-  // Add a bookmark
   handleAddBookmark(request, sendResponse) {
     try {
       const { title, url, parentId } = request;
@@ -116,7 +302,7 @@ class BackgroundManager {
       chrome.bookmarks.create({
         title: title,
         url: url,
-        parentId: parentId || '1' // Default to bookmarks bar
+        parentId: parentId || '1'
       }, (bookmark) => {
         if (chrome.runtime.lastError) {
           console.error('Failed to create bookmark:', chrome.runtime.lastError);
@@ -133,7 +319,6 @@ class BackgroundManager {
           bookmark: bookmark 
         });
         
-        // Notify web app
         this.notifyWebApp('bookmarkCreated', bookmark);
       });
     } catch (error) {
@@ -144,10 +329,9 @@ class BackgroundManager {
       });
     }
     
-    return true; // Keep message channel open
+    return true;
   }
 
-  // Remove a bookmark
   handleRemoveBookmark(request, sendResponse) {
     try {
       const { id } = request;
@@ -175,7 +359,6 @@ class BackgroundManager {
           success: true 
         });
         
-        // Notify web app
         this.notifyWebApp('bookmarkRemoved', { id });
       });
     } catch (error) {
@@ -186,14 +369,12 @@ class BackgroundManager {
       });
     }
     
-    return true; // Keep message channel open
+    return true;
   }
 
-  // Handle sync completion
   handleSyncComplete(request, sendResponse) {
     console.log('Sync completion received:', request.data);
     
-    // Forward to popup if it's open
     chrome.runtime.sendMessage(request).catch(() => {
       console.log('Popup not open to receive sync completion');
     });
@@ -202,7 +383,6 @@ class BackgroundManager {
     return false;
   }
 
-  // Extract bookmarks from Chrome's bookmark tree
   extractBookmarks(bookmarkTree, folder = '') {
     let bookmarks = [];
     
@@ -211,7 +391,6 @@ class BackgroundManager {
       
       for (const node of nodes) {
         if (node.url) {
-          // This is a bookmark
           bookmarks.push({
             id: node.id,
             title: node.title || 'Untitled',
@@ -221,7 +400,6 @@ class BackgroundManager {
             parentId: node.parentId
           });
         } else if (node.children) {
-          // This is a folder
           const folderName = currentFolder 
             ? `${currentFolder}/${node.title}` 
             : node.title;
@@ -234,7 +412,6 @@ class BackgroundManager {
     return bookmarks;
   }
 
-  // Set up bookmark change listeners
   setupBookmarkListeners() {
     chrome.bookmarks.onCreated.addListener((id, bookmark) => {
       console.log('Bookmark created:', id, bookmark);
@@ -257,7 +434,6 @@ class BackgroundManager {
     });
   }
 
-  // Notify web app of bookmark changes
   async notifyWebApp(event, data) {
     const webAppUrls = [
       'http://localhost:*/*',
@@ -274,7 +450,6 @@ class BackgroundManager {
         return;
       }
       
-      // Send message to all matching tabs
       for (const tab of tabs) {
         try {
           await chrome.tabs.sendMessage(tab.id, {
@@ -285,8 +460,7 @@ class BackgroundManager {
           
           console.log(`Notified tab ${tab.id} of ${event}`);
         } catch (error) {
-          // Tab might not have content script loaded, try to inject it
-          console.log(`Tab ${tab.id} not ready, trying to inject content script:`, error.message);
+          console.log(`Tab ${tab.id} not ready:`, error.message);
           
           try {
             await chrome.scripting.executeScript({
@@ -294,10 +468,8 @@ class BackgroundManager {
               files: ['content.js']
             });
             
-            // Wait for script to initialize
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // Try sending message again
             await chrome.tabs.sendMessage(tab.id, {
               action: 'notifyWebApp',
               event: event,

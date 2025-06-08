@@ -1,27 +1,29 @@
-// Chrome Extension Popup Script - Refactored for better reliability
+// Chrome Extension Popup Script - Enhanced with Contextual Search
 class PopupManager {
   constructor() {
     this.isConnected = false;
     this.bookmarkCount = 0;
     this.isSyncing = false;
+    this.contextualSearchEnabled = true;
+    this.currentPageContext = null;
+    this.contextualResults = [];
     this.elements = {};
     
     this.init();
   }
 
-  // Initialize popup
   init() {
-    console.log('🚀 Popup initializing...');
+    console.log('🚀 Popup initializing with contextual search...');
     
     this.cacheElements();
     this.setupEventListeners();
     this.loadStoredData();
     this.startConnectionMonitoring();
+    this.loadContextualSearchResults();
     
     console.log('✅ Popup initialized successfully');
   }
 
-  // Cache DOM elements
   cacheElements() {
     this.elements = {
       status: document.getElementById('status'),
@@ -29,14 +31,21 @@ class PopupManager {
       bookmarkCount: document.getElementById('bookmarkCount'),
       lastSync: document.getElementById('lastSync'),
       openWebAppBtn: document.getElementById('openWebApp'),
-      syncBookmarksBtn: document.getElementById('syncBookmarks')
+      syncBookmarksBtn: document.getElementById('syncBookmarks'),
+      searchContextualBtn: document.getElementById('searchContextual'),
+      contextualToggle: document.getElementById('contextualToggle'),
+      pageContext: document.getElementById('pageContext'),
+      pageContextContent: document.getElementById('pageContextContent'),
+      contextualResults: document.getElementById('contextualResults'),
+      contextualResultsContent: document.getElementById('contextualResultsContent')
     };
   }
 
-  // Set up event listeners
   setupEventListeners() {
     this.elements.openWebAppBtn.addEventListener('click', () => this.openWebApp());
     this.elements.syncBookmarksBtn.addEventListener('click', () => this.syncBookmarks());
+    this.elements.searchContextualBtn.addEventListener('click', () => this.performContextualSearch());
+    this.elements.contextualToggle.addEventListener('change', (e) => this.toggleContextualSearch(e.target.checked));
     
     // Listen for messages from background script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -44,7 +53,6 @@ class PopupManager {
     });
   }
 
-  // Handle messages from background script
   handleBackgroundMessage(message, sender, sendResponse) {
     console.log('📨 Popup received message:', message);
     
@@ -58,12 +66,14 @@ class PopupManager {
       case 'syncComplete':
         this.handleSyncComplete(message.data);
         break;
+      case 'contextualSearchResults':
+        this.handleContextualSearchResults(message.results, message.context);
+        break;
     }
     
     sendResponse({ success: true });
   }
 
-  // Update status display
   updateStatus(connected, message) {
     console.log('📊 Updating status:', { connected, message });
     
@@ -74,44 +84,173 @@ class PopupManager {
     this.elements.stats.style.display = connected ? 'block' : 'none';
   }
 
-  // Update bookmark count
   updateBookmarkCount(count) {
     this.bookmarkCount = count;
     this.elements.bookmarkCount.textContent = count.toLocaleString();
   }
 
-  // Update last sync time
   updateLastSync() {
     const now = new Date();
     this.elements.lastSync.textContent = now.toLocaleTimeString();
     
-    // Store sync info
     chrome.storage.local.set({
       lastSyncTime: now.toISOString(),
       lastBookmarkCount: this.bookmarkCount
     });
   }
 
-  // Load stored sync information
   loadStoredData() {
-    chrome.storage.local.get(['lastSyncTime', 'lastBookmarkCount'], (result) => {
+    chrome.storage.local.get(['lastSyncTime', 'lastBookmarkCount', 'contextualSearchEnabled'], (result) => {
       if (result.lastSyncTime) {
         const lastSync = new Date(result.lastSyncTime);
         this.elements.lastSync.textContent = lastSync.toLocaleTimeString();
       }
+      
+      if (result.contextualSearchEnabled !== undefined) {
+        this.contextualSearchEnabled = result.contextualSearchEnabled;
+        this.elements.contextualToggle.checked = this.contextualSearchEnabled;
+      }
     });
   }
 
-  // Start connection monitoring
-  startConnectionMonitoring() {
-    // Check immediately
-    this.checkConnection();
+  async loadContextualSearchResults() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'getContextualSearchResults'
+      });
+
+      if (response?.success) {
+        this.currentPageContext = response.context;
+        this.contextualResults = response.results || [];
+        
+        this.updatePageContextDisplay();
+        this.updateContextualResultsDisplay();
+      }
+    } catch (error) {
+      console.log('Could not load contextual search results:', error.message);
+    }
+  }
+
+  updatePageContextDisplay() {
+    if (!this.currentPageContext) {
+      this.elements.pageContext.style.display = 'none';
+      return;
+    }
+
+    const context = this.currentPageContext;
+    const contextHtml = `
+      <div class="page-context-item"><strong>Title:</strong> ${this.truncateText(context.title, 40)}</div>
+      <div class="page-context-item"><strong>Domain:</strong> ${context.domain}</div>
+      ${context.technology && context.technology.length > 0 ? 
+        `<div class="page-context-item"><strong>Tech:</strong> ${context.technology.join(', ')}</div>` : ''}
+    `;
     
-    // Check every 3 seconds
+    this.elements.pageContextContent.innerHTML = contextHtml;
+    this.elements.pageContext.style.display = 'block';
+  }
+
+  updateContextualResultsDisplay() {
+    if (!this.contextualResults || this.contextualResults.length === 0) {
+      this.elements.contextualResults.style.display = 'none';
+      return;
+    }
+
+    const resultsHtml = this.contextualResults.map(result => `
+      <div class="contextual-result">
+        <a href="${result.url}" target="_blank" class="contextual-result-title">
+          ${this.truncateText(result.title, 50)}
+        </a>
+        <div class="contextual-result-url">${this.truncateText(result.url, 60)}</div>
+        <div class="contextual-result-score">
+          ${Math.round(result.similarity_score * 100)}% match (${result.search_type})
+        </div>
+      </div>
+    `).join('');
+    
+    this.elements.contextualResultsContent.innerHTML = resultsHtml;
+    this.elements.contextualResults.style.display = 'block';
+  }
+
+  truncateText(text, maxLength) {
+    if (!text) return '';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+  }
+
+  async toggleContextualSearch(enabled) {
+    this.contextualSearchEnabled = enabled;
+    
+    // Save preference
+    chrome.storage.local.set({ contextualSearchEnabled: enabled });
+    
+    // Notify background script
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'toggleContextualSearch',
+        enabled: enabled
+      });
+      
+      console.log('🔍 Contextual search:', enabled ? 'enabled' : 'disabled');
+    } catch (error) {
+      console.log('Could not toggle contextual search:', error.message);
+    }
+  }
+
+  async performContextualSearch() {
+    if (!this.contextualSearchEnabled) {
+      alert('Contextual search is disabled. Please enable it first.');
+      return;
+    }
+
+    console.log('🔍 Performing manual contextual search...');
+    
+    this.elements.searchContextualBtn.disabled = true;
+    this.elements.searchContextualBtn.innerHTML = '🔍 Searching...';
+
+    try {
+      // Get current active tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      if (!tab || !tab.id) {
+        throw new Error('No active tab found');
+      }
+
+      // Request contextual search
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: 'searchRelatedBookmarks'
+      });
+
+      if (response?.success) {
+        this.contextualResults = response.results || [];
+        this.updateContextualResultsDisplay();
+        
+        console.log(`✅ Found ${this.contextualResults.length} related bookmarks`);
+      } else {
+        throw new Error(response?.error || 'Search failed');
+      }
+    } catch (error) {
+      console.error('Contextual search failed:', error);
+      alert(`Contextual search failed: ${error.message}`);
+    } finally {
+      this.elements.searchContextualBtn.disabled = false;
+      this.elements.searchContextualBtn.innerHTML = '🎯 Find Related Bookmarks';
+    }
+  }
+
+  handleContextualSearchResults(results, context) {
+    console.log('📨 Received contextual search results:', results);
+    
+    this.contextualResults = results || [];
+    this.currentPageContext = context;
+    
+    this.updatePageContextDisplay();
+    this.updateContextualResultsDisplay();
+  }
+
+  startConnectionMonitoring() {
+    this.checkConnection();
     setInterval(() => this.checkConnection(), 3000);
   }
 
-  // Check connection to web app
   async checkConnection() {
     console.log('🔍 Checking web app connection...');
     
@@ -127,7 +266,6 @@ class PopupManager {
       console.log('📋 Found tabs:', tabs?.length || 0);
       
       if (tabs && tabs.length > 0) {
-        // Test responsiveness of each tab
         for (const tab of tabs) {
           const isResponsive = await this.testTabResponsiveness(tab);
           if (isResponsive) {
@@ -147,7 +285,6 @@ class PopupManager {
     }
   }
 
-  // Test if a tab is responsive
   async testTabResponsiveness(tab) {
     console.log('🧪 Testing tab responsiveness:', tab.id);
     
@@ -160,17 +297,14 @@ class PopupManager {
     } catch (error) {
       console.log('⚠️ Tab not responsive, trying content script injection:', error.message);
       
-      // Try to inject content script
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           files: ['content.js']
         });
         
-        // Wait for initialization
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Test again
         const response = await chrome.tabs.sendMessage(tab.id, {
           action: 'testConnection'
         });
@@ -183,7 +317,6 @@ class PopupManager {
     }
   }
 
-  // Get bookmark count from Chrome
   getBookmarkCount() {
     console.log('📊 Getting bookmark count...');
     
@@ -199,7 +332,6 @@ class PopupManager {
     });
   }
 
-  // Count bookmarks recursively
   countBookmarks(bookmarkTree) {
     let count = 0;
     
@@ -219,7 +351,6 @@ class PopupManager {
     return count;
   }
 
-  // Open web app
   openWebApp() {
     console.log('🌐 Opening web app...');
     
@@ -238,7 +369,6 @@ class PopupManager {
     });
   }
 
-  // Sync bookmarks
   async syncBookmarks() {
     if (this.isSyncing) {
       console.log('⏭️ Sync already in progress');
@@ -252,7 +382,6 @@ class PopupManager {
     this.updateSyncButton('🔄 Checking...');
 
     try {
-      // Check if sync is needed
       const syncCheck = await this.checkSyncNeeded();
       console.log('🔍 Sync check result:', syncCheck);
 
@@ -265,7 +394,6 @@ class PopupManager {
         return;
       }
 
-      // Perform sync
       await this.performSync(syncCheck);
       
     } catch (error) {
@@ -275,7 +403,6 @@ class PopupManager {
     }
   }
 
-  // Check if sync is needed
   async checkSyncNeeded() {
     return new Promise((resolve) => {
       chrome.storage.local.get(['lastSyncTime', 'lastBookmarkCount'], (result) => {
@@ -299,7 +426,6 @@ class PopupManager {
     });
   }
 
-  // Perform the actual sync
   async performSync(syncCheck) {
     const reasonText = {
       'first-time': 'First sync',
@@ -309,7 +435,6 @@ class PopupManager {
     
     this.updateSyncButton(`🔄 ${reasonText[syncCheck.reason]}...`);
     
-    // Get current bookmarks
     chrome.bookmarks.getTree(async (bookmarkTree) => {
       if (chrome.runtime.lastError) {
         throw new Error(`Failed to get bookmarks: ${chrome.runtime.lastError.message}`);
@@ -318,12 +443,10 @@ class PopupManager {
       const count = this.countBookmarks(bookmarkTree);
       this.updateBookmarkCount(count);
       
-      // Send sync request to web app
       await this.sendSyncRequest(count, syncCheck.reason);
     });
   }
 
-  // Send sync request to web app
   async sendSyncRequest(count, reason) {
     const webAppUrls = [
       'http://localhost:*/*',
@@ -338,7 +461,6 @@ class PopupManager {
       throw new Error('No web app tabs found');
     }
     
-    // Set up response listener
     let syncCompleted = false;
     const responseTimeout = setTimeout(() => {
       if (!syncCompleted) {
@@ -360,7 +482,6 @@ class PopupManager {
     
     chrome.runtime.onMessage.addListener(responseListener);
     
-    // Send sync request to responsive tabs
     for (const tab of tabs) {
       try {
         await chrome.tabs.sendMessage(tab.id, {
@@ -370,7 +491,7 @@ class PopupManager {
         });
         
         console.log('📨 Sync request sent to tab:', tab.id);
-        break; // Only send to first responsive tab
+        break;
       } catch (error) {
         console.log('⚠️ Tab not ready:', error.message);
         continue;
@@ -378,7 +499,6 @@ class PopupManager {
     }
   }
 
-  // Handle sync completion
   handleSyncComplete(data) {
     console.log('✅ Sync completed:', data);
     
@@ -389,12 +509,10 @@ class PopupManager {
     setTimeout(() => this.resetSyncButton(), 2000);
   }
 
-  // Update sync button text
   updateSyncButton(text) {
     this.elements.syncBookmarksBtn.innerHTML = text;
   }
 
-  // Reset sync button
   resetSyncButton() {
     this.elements.syncBookmarksBtn.disabled = false;
     this.elements.syncBookmarksBtn.innerHTML = '🔄 Sync Bookmarks';

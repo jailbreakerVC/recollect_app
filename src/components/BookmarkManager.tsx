@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, RefreshCw, Chrome, TestTube, Bug } from 'lucide-react';
+import { Bookmark, RefreshCw, Chrome, TestTube, Bug, Brain } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { extensionService } from '../services/extensionService';
@@ -9,6 +9,7 @@ import { BookmarkGrid } from './BookmarkGrid';
 import { BookmarkControls } from './BookmarkControls';
 import { StatusCards } from './StatusCards';
 import { DebugPanel } from './DebugPanel';
+import { SemanticSearchPanel } from './SemanticSearchPanel';
 import { ConnectionStatus, SortOption } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -34,6 +35,7 @@ const BookmarkManager: React.FC = () => {
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortOption>('date');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showSemanticSearch, setShowSemanticSearch] = useState(false);
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
@@ -68,6 +70,62 @@ const BookmarkManager: React.FC = () => {
       debugContext();
     }
   }, [user]);
+
+  // Set up extension message listener for contextual search
+  useEffect(() => {
+    const handleExtensionMessage = (event: MessageEvent) => {
+      if (event.data.source === 'bookmark-manager-extension' && 
+          event.data.action === 'searchRelatedBookmarks') {
+        handleContextualSearchRequest(event.data.context, event.data.requestId);
+      }
+    };
+
+    window.addEventListener('message', handleExtensionMessage);
+    return () => window.removeEventListener('message', handleExtensionMessage);
+  }, [user]);
+
+  const handleContextualSearchRequest = async (context: any, requestId: string) => {
+    if (!user) {
+      window.postMessage({
+        source: 'bookmark-manager-webapp',
+        action: 'searchResults',
+        success: false,
+        error: 'User not logged in'
+      }, window.location.origin);
+      return;
+    }
+
+    try {
+      Logger.info('BookmarkManager', 'Handling contextual search request', context);
+      
+      // Import semantic search service dynamically to avoid circular imports
+      const { SemanticSearchService } = await import('../services/semanticSearchService');
+      
+      const results = await SemanticSearchService.searchByPageContext(context, user.id, {
+        maxResults: 5,
+        similarityThreshold: 0.3,
+        includeUrl: false // Don't include the current page
+      });
+
+      window.postMessage({
+        source: 'bookmark-manager-webapp',
+        action: 'searchResults',
+        success: true,
+        results: results
+      }, window.location.origin);
+
+      Logger.info('BookmarkManager', `Sent ${results.length} contextual search results to extension`);
+    } catch (error) {
+      Logger.error('BookmarkManager', 'Contextual search failed', error);
+      
+      window.postMessage({
+        source: 'bookmark-manager-webapp',
+        action: 'searchResults',
+        success: false,
+        error: error instanceof Error ? error.message : 'Search failed'
+      }, window.location.origin);
+    }
+  };
 
   const filteredBookmarks = bookmarks
     .filter(bookmark => {
@@ -381,6 +439,14 @@ const BookmarkManager: React.FC = () => {
                 </>
               )}
               <button
+                onClick={() => setShowSemanticSearch(!showSemanticSearch)}
+                className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                title="Semantic search with AI"
+              >
+                <Brain className="w-4 h-4 mr-2" />
+                AI Search
+              </button>
+              <button
                 onClick={handleRefresh}
                 disabled={loading}
                 className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
@@ -416,6 +482,13 @@ const BookmarkManager: React.FC = () => {
           extensionAvailable={extensionStatus === 'available'}
           lastSyncResult={lastSyncResult}
         />
+
+        {/* Semantic Search Panel */}
+        {showSemanticSearch && (
+          <div className="mb-8">
+            <SemanticSearchPanel onClose={() => setShowSemanticSearch(false)} />
+          </div>
+        )}
 
         <DebugPanel 
           user={user}

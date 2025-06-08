@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
   <style>
     body {
-      width: 300px;
+      width: 350px;
       padding: 20px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
@@ -105,6 +105,14 @@
       background: #4b5563;
     }
     
+    .button.contextual {
+      background: linear-gradient(135deg, #10b981, #059669);
+    }
+    
+    .button.contextual:hover {
+      background: linear-gradient(135deg, #059669, #047857);
+    }
+    
     .info {
       font-size: 12px;
       color: #6b7280;
@@ -133,6 +141,78 @@
       margin-bottom: 0;
     }
     
+    .contextual-results {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 15px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .contextual-results h4 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      color: #0369a1;
+      font-weight: 600;
+    }
+    
+    .contextual-result {
+      padding: 6px 0;
+      border-bottom: 1px solid #e0f2fe;
+      font-size: 12px;
+    }
+    
+    .contextual-result:last-child {
+      border-bottom: none;
+    }
+    
+    .contextual-result-title {
+      font-weight: 500;
+      color: #1e40af;
+      margin-bottom: 2px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    
+    .contextual-result-title:hover {
+      text-decoration: underline;
+    }
+    
+    .contextual-result-url {
+      color: #6b7280;
+      font-size: 11px;
+      word-break: break-all;
+    }
+    
+    .contextual-result-score {
+      color: #059669;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    
+    .page-context {
+      background: #fefce8;
+      border: 1px solid #fde047;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 15px;
+      font-size: 12px;
+    }
+    
+    .page-context h4 {
+      margin: 0 0 6px 0;
+      font-size: 13px;
+      color: #a16207;
+      font-weight: 600;
+    }
+    
+    .page-context-item {
+      margin-bottom: 4px;
+      color: #92400e;
+    }
+    
     .loading {
       display: inline-block;
       width: 12px;
@@ -145,6 +225,52 @@
     
     @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+    
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 20px;
+      margin-left: 10px;
+    }
+    
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 20px;
+    }
+    
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    
+    input:checked + .slider {
+      background-color: #10b981;
+    }
+    
+    input:checked + .slider:before {
+      transform: translateX(20px);
     }
   </style>
 </head>
@@ -167,6 +293,23 @@
       <span>Last sync:</span>
       <span id="lastSync">Never</span>
     </div>
+    <div class="stats-item">
+      <span>Contextual Search:</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="contextualToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div id="pageContext" class="page-context" style="display: none;">
+    <h4>📄 Current Page</h4>
+    <div id="pageContextContent"></div>
+  </div>
+
+  <div id="contextualResults" class="contextual-results" style="display: none;">
+    <h4>🔍 Related Bookmarks</h4>
+    <div id="contextualResultsContent"></div>
   </div>
   
   <button class="button" id="openWebApp">
@@ -176,9 +319,13 @@
   <button class="button secondary" id="syncBookmarks">
     🔄 Sync Bookmarks
   </button>
+
+  <button class="button contextual" id="searchContextual">
+    🎯 Find Related Bookmarks
+  </button>
   
   <div class="info">
-    This extension enables bookmark access for the Bookmark Manager web application.
+    This extension enables bookmark access and contextual search for the Bookmark Manager web application.
   </div>
 
   <script src="popup.js"></script>
