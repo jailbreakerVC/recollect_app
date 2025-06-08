@@ -1,7 +1,32 @@
 import { ExtensionBookmark, ExtensionMessage } from '../types';
 import { Logger } from '../utils/logger';
-import { ValidationUtils } from '../utils/validation';
 import { APP_CONFIG, EXTENSION_MESSAGES, IGNORED_MESSAGE_SOURCES } from '../constants';
+
+// Define validation functions directly to avoid import issues
+const isValidUrl = (url: string): boolean => {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const isValidBookmarkTitle = (title: string): boolean => {
+  return typeof title === 'string' && title.trim().length > 0;
+};
+
+const isValidExtensionBookmark = (bookmark: any): bookmark is ExtensionBookmark => {
+  return (
+    bookmark &&
+    typeof bookmark.id === 'string' &&
+    typeof bookmark.title === 'string' &&
+    typeof bookmark.url === 'string' &&
+    typeof bookmark.dateAdded === 'string' &&
+    isValidUrl(bookmark.url) &&
+    isValidBookmarkTitle(bookmark.title)
+  );
+};
 
 export class ExtensionService {
   private static instance: ExtensionService | null = null;
@@ -257,7 +282,7 @@ export class ExtensionService {
       const bookmarks = response.bookmarks || [];
       Logger.info('ExtensionService', `Received ${bookmarks.length} bookmarks from extension`);
       
-      const validBookmarks = bookmarks.filter(ValidationUtils.isValidExtensionBookmark);
+      const validBookmarks = bookmarks.filter(isValidExtensionBookmark);
       
       if (validBookmarks.length !== bookmarks.length) {
         Logger.warn('ExtensionService', `Filtered out ${bookmarks.length - validBookmarks.length} invalid bookmarks`);
@@ -273,7 +298,7 @@ export class ExtensionService {
   async addBookmark(title: string, url: string, parentId?: string): Promise<void> {
     Logger.info('ExtensionService', 'Adding bookmark to Chrome', { title, url, parentId });
     
-    if (!ValidationUtils.isValidBookmarkTitle(title) || !ValidationUtils.isValidUrl(url)) {
+    if (!isValidBookmarkTitle(title) || !isValidUrl(url)) {
       throw new Error('Invalid bookmark data');
     }
     

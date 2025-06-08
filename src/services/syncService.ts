@@ -2,8 +2,25 @@ import { BookmarkService } from './bookmarkService';
 import { extensionService } from './extensionService';
 import { ExtensionBookmark, DatabaseBookmark, SyncResult } from '../types';
 import { Logger } from '../utils/logger';
-import { ValidationUtils } from '../utils/validation';
 import { APP_CONFIG } from '../constants';
+
+// Define validation functions directly to avoid circular imports
+const validateUserId = (userId: string): boolean => {
+  return typeof userId === 'string' && userId.trim().length > 0;
+};
+
+const isValidBookmarkTitle = (title: string): boolean => {
+  return typeof title === 'string' && title.trim().length > 0;
+};
+
+const isValidUrl = (url: string): boolean => {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export class SyncService {
   private static lastSyncHash: string | null = null;
@@ -51,7 +68,7 @@ export class SyncService {
     userId: string, 
     onProgress?: (status: string) => void
   ): Promise<SyncResult> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
@@ -299,11 +316,11 @@ export class SyncService {
     url: string,
     folder?: string
   ): Promise<DatabaseBookmark> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
-    if (!ValidationUtils.isValidBookmarkTitle(title) || !ValidationUtils.isValidUrl(url)) {
+    if (!isValidBookmarkTitle(title) || !isValidUrl(url)) {
       throw new Error('Invalid bookmark data');
     }
 
@@ -329,7 +346,7 @@ export class SyncService {
     userId: string,
     chromeBookmarkId?: string
   ): Promise<void> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 

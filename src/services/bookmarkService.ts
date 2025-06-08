@@ -1,11 +1,49 @@
 import { supabase } from '../lib/supabase';
 import { DatabaseBookmark } from '../types';
 import { Logger } from '../utils/logger';
-import { ValidationUtils } from '../utils/validation';
+
+// Define validation functions directly to avoid circular imports
+const validateUserId = (userId: string): boolean => {
+  return typeof userId === 'string' && userId.trim().length > 0;
+};
+
+const isValidBookmarkTitle = (title: string): boolean => {
+  return typeof title === 'string' && title.trim().length > 0;
+};
+
+const isValidUrl = (url: string): boolean => {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const isValidDatabaseBookmark = (bookmark: any): bookmark is DatabaseBookmark => {
+  return (
+    bookmark &&
+    typeof bookmark.id === 'string' &&
+    typeof bookmark.user_id === 'string' &&
+    typeof bookmark.title === 'string' &&
+    typeof bookmark.url === 'string' &&
+    isValidUrl(bookmark.url) &&
+    isValidBookmarkTitle(bookmark.title)
+  );
+};
+
+const sanitizeBookmarkData = (bookmark: Partial<DatabaseBookmark>): Partial<DatabaseBookmark> => {
+  return {
+    ...bookmark,
+    title: bookmark.title?.trim(),
+    url: bookmark.url?.trim(),
+    folder: bookmark.folder?.trim() || undefined,
+  };
+};
 
 export class BookmarkService {
   private static async setUserContext(userId: string): Promise<void> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
@@ -57,7 +95,7 @@ export class BookmarkService {
   }
 
   static async getBookmarks(userId: string): Promise<DatabaseBookmark[]> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
@@ -76,7 +114,7 @@ export class BookmarkService {
       throw new Error(`Failed to fetch bookmarks: ${error.message}`);
     }
 
-    const validBookmarks = (data || []).filter(ValidationUtils.isValidDatabaseBookmark);
+    const validBookmarks = (data || []).filter(isValidDatabaseBookmark);
     
     Logger.info('BookmarkService', `Fetched ${validBookmarks.length} valid bookmarks for user ${userId}`);
     return validBookmarks;
@@ -89,17 +127,17 @@ export class BookmarkService {
     folder?: string,
     chromeBookmarkId?: string
   ): Promise<DatabaseBookmark> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
-    if (!ValidationUtils.isValidBookmarkTitle(title) || !ValidationUtils.isValidUrl(url)) {
+    if (!isValidBookmarkTitle(title) || !isValidUrl(url)) {
       throw new Error('Invalid bookmark data');
     }
 
     Logger.info('BookmarkService', 'Adding bookmark', { userId, title, url, folder, chromeBookmarkId });
     
-    const bookmarkData = ValidationUtils.sanitizeBookmarkData({
+    const bookmarkData = sanitizeBookmarkData({
       user_id: userId,
       title,
       url,
@@ -135,13 +173,13 @@ export class BookmarkService {
     userId: string,
     updates: Partial<DatabaseBookmark>
   ): Promise<DatabaseBookmark> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
     Logger.info('BookmarkService', 'Updating bookmark', { bookmarkId, updates });
 
-    const sanitizedUpdates = ValidationUtils.sanitizeBookmarkData(updates);
+    const sanitizedUpdates = sanitizeBookmarkData(updates);
 
     const { data, error } = await supabase
       .from('bookmarks')
@@ -161,7 +199,7 @@ export class BookmarkService {
   }
 
   static async removeBookmark(bookmarkId: string, userId: string): Promise<void> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
@@ -185,7 +223,7 @@ export class BookmarkService {
     chromeBookmarkId: string,
     userId: string
   ): Promise<DatabaseBookmark | null> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
@@ -211,7 +249,7 @@ export class BookmarkService {
     userId: string,
     bookmarks: Partial<DatabaseBookmark>[]
   ): Promise<DatabaseBookmark[]> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
@@ -223,7 +261,7 @@ export class BookmarkService {
     Logger.info('BookmarkService', `Bulk inserting ${bookmarks.length} bookmarks for user: ${userId}`);
     
     const sanitizedBookmarks = bookmarks.map(bookmark => 
-      ValidationUtils.sanitizeBookmarkData({
+      sanitizeBookmarkData({
         ...bookmark,
         user_id: userId
       })
@@ -256,7 +294,7 @@ export class BookmarkService {
     chromeBookmarkIds: string[],
     userId: string
   ): Promise<void> {
-    if (!ValidationUtils.validateUserId(userId)) {
+    if (!validateUserId(userId)) {
       throw new Error('Invalid user ID');
     }
 
