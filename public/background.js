@@ -202,7 +202,7 @@ class BackgroundManager {
       // Set up response listener
       const responseHandler = (message, sender, sendResponse) => {
         if (message.action === 'searchResponse' && 
-            message.data.requestId === requestId) {
+            message.data && message.data.requestId === requestId) {
           responseReceived = true;
           chrome.runtime.onMessage.removeListener(responseHandler);
           
@@ -245,7 +245,7 @@ class BackgroundManager {
       // Set up response listener
       const responseHandler = (message, sender, sendResponse) => {
         if (message.action === 'searchResponse' && 
-            message.data.requestId === requestId) {
+            message.data && message.data.requestId === requestId) {
           responseReceived = true;
           chrome.runtime.onMessage.removeListener(responseHandler);
           
@@ -366,7 +366,7 @@ class BackgroundManager {
           // Fallback: Show notification with action
           chrome.notifications.create({
             type: 'basic',
-            iconUrl: 'icon48.png',
+            iconUrl: '/icon48.png',
             title: `${results.length} Bookmark${results.length > 1 ? 's' : ''} Found`,
             message: `Found bookmarks for "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}". Click extension icon to view.`,
             buttons: [{ title: 'View Results' }]
@@ -397,7 +397,7 @@ class BackgroundManager {
         // Show "no results" notification for manual searches
         chrome.notifications.create({
           type: 'basic',
-          iconUrl: 'icon48.png',
+          iconUrl: '/icon48.png',
           title: 'No Bookmarks Found',
           message: `No bookmarks found for "${query}"`
         });
@@ -408,7 +408,7 @@ class BackgroundManager {
   showSearchError(message) {
     chrome.notifications.create({
       type: 'basic',
-      iconUrl: 'icon48.png',
+      iconUrl: '/icon48.png',
       title: 'Bookmark Search Failed',
       message: message
     });
@@ -431,6 +431,12 @@ class BackgroundManager {
   }
 
   handleMessage(request, sender, sendResponse) {
+    // Fix: Check if request exists and has action property
+    if (!request || typeof request.action !== 'string') {
+      sendResponse({ success: false, error: 'Invalid request format' });
+      return false;
+    }
+    
     switch (request.action) {
       case 'getBookmarks':
         return this.handleGetBookmarks(sendResponse);

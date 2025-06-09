@@ -31,7 +31,7 @@ class PopupManager {
           chrome.action.setBadgeText({ text: '' });
           
           // Highlight the search results section with a subtle animation
-          if (this.elements.searchSection && searchData.results.length > 0) {
+          if (this.elements.searchSection && searchData.results && searchData.results.length > 0) {
             this.elements.searchSection.style.animation = 'fadeIn 0.5s ease-in-out';
           }
         }
@@ -72,7 +72,7 @@ class PopupManager {
         action: 'getSearchResults'
       });
 
-      if (response?.success && response.searchData) {
+      if (response && response.success && response.searchData) {
         this.displaySearchResults(response.searchData);
       } else {
         this.showNoResults();
@@ -120,8 +120,8 @@ class PopupManager {
 
     // Display results
     const resultsHtml = results.map((result, index) => `
-      <div class="search-result" data-index="${index}" data-url="${result.url}">
-        <div class="result-title">${this.escapeHtml(result.title)}</div>
+      <div class="search-result" data-index="${index}" data-url="${this.escapeHtml(result.url)}">
+        <div class="result-title">${this.escapeHtml(result.title || 'Untitled')}</div>
         <div class="result-url">${this.escapeHtml(this.truncateUrl(result.url))}</div>
         <div class="result-meta">
           <span class="result-type">${this.getSearchTypeLabel(result.search_type)}</span>
@@ -276,6 +276,7 @@ class PopupManager {
   }
 
   escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
