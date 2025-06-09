@@ -101,6 +101,9 @@ class ContentScriptManager {
         return this.handleSetupResponseListener(request, sendResponse);
       case 'testConnection':
         return this.handleConnectionTest(request, sendResponse);
+      case 'ping':
+        sendResponse({ success: true, message: 'pong' });
+        return false;
       default:
         sendResponse({ success: true });
         return false;

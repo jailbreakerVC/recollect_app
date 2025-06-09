@@ -199,9 +199,9 @@ class BackgroundManager {
     return new Promise((resolve, reject) => {
       let responseReceived = false;
       
-      // Set up response listener
+      // Set up response listener FIRST
       const responseHandler = (message, sender, sendResponse) => {
-        if (message.action === 'searchResponse' && 
+        if (message && message.action === 'searchResponse' && 
             message.data && message.data.requestId === requestId) {
           responseReceived = true;
           chrome.runtime.onMessage.removeListener(responseHandler);
@@ -221,18 +221,20 @@ class BackgroundManager {
         action: 'searchByKeyword',
         keyword: keyword,
         requestId: requestId
+      }).then(() => {
+        // Message sent successfully
       }).catch(error => {
         chrome.runtime.onMessage.removeListener(responseHandler);
         reject(error);
       });
 
-      // Timeout after 10 seconds
+      // Timeout after 15 seconds
       setTimeout(() => {
         if (!responseReceived) {
           chrome.runtime.onMessage.removeListener(responseHandler);
-          reject(new Error('Search timeout'));
+          reject(new Error('Search timeout - no response from web app'));
         }
-      }, 10000);
+      }, 15000);
     });
   }
 
@@ -242,9 +244,9 @@ class BackgroundManager {
     return new Promise((resolve, reject) => {
       let responseReceived = false;
       
-      // Set up response listener
+      // Set up response listener FIRST
       const responseHandler = (message, sender, sendResponse) => {
-        if (message.action === 'searchResponse' && 
+        if (message && message.action === 'searchResponse' && 
             message.data && message.data.requestId === requestId) {
           responseReceived = true;
           chrome.runtime.onMessage.removeListener(responseHandler);
@@ -264,18 +266,20 @@ class BackgroundManager {
         action: 'searchByPageContext',
         context: context,
         requestId: requestId
+      }).then(() => {
+        // Message sent successfully
       }).catch(error => {
         chrome.runtime.onMessage.removeListener(responseHandler);
         reject(error);
       });
 
-      // Timeout after 10 seconds
+      // Timeout after 15 seconds
       setTimeout(() => {
         if (!responseReceived) {
           chrome.runtime.onMessage.removeListener(responseHandler);
-          reject(new Error('Context search timeout'));
+          reject(new Error('Context search timeout - no response from web app'));
         }
-      }, 10000);
+      }, 15000);
     });
   }
 
@@ -295,10 +299,14 @@ class BackgroundManager {
       }
       
       let messageSent = false;
+      let lastError = null;
       
       for (const tab of tabs) {
         try {
-          // First try to send message directly
+          // Check if tab is ready by testing if content script is injected
+          await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
+          
+          // Content script is ready, send the actual message
           await chrome.tabs.sendMessage(tab.id, {
             action: 'forwardToWebApp',
             payload: message
@@ -307,6 +315,8 @@ class BackgroundManager {
           messageSent = true;
           break;
         } catch (error) {
+          lastError = error;
+          
           try {
             // Inject content script and try again
             await chrome.scripting.executeScript({
@@ -314,8 +324,8 @@ class BackgroundManager {
               files: ['content.js']
             });
             
-            // Wait a moment for injection
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Wait for injection to complete
+            await new Promise(resolve => setTimeout(resolve, 1500));
             
             // Try sending message again
             await chrome.tabs.sendMessage(tab.id, {
@@ -326,13 +336,14 @@ class BackgroundManager {
             messageSent = true;
             break;
           } catch (injectionError) {
+            lastError = injectionError;
             continue;
           }
         }
       }
       
       if (!messageSent) {
-        throw new Error('Could not send message to any web app tab');
+        throw new Error(`Could not send message to any web app tab. Last error: ${lastError?.message || 'Unknown error'}`);
       }
     } catch (error) {
       throw error;
@@ -460,6 +471,9 @@ class BackgroundManager {
         return false;
       case 'testSearch':
         return this.handleTestSearch(request, sendResponse);
+      case 'ping':
+        sendResponse({ success: true, message: 'pong' });
+        return false;
       default:
         sendResponse({ success: false, error: 'Unknown action' });
         return false;

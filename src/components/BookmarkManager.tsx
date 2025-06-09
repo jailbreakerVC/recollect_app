@@ -127,6 +127,7 @@ const BookmarkManager: React.FC = () => {
   };
 
   const sendSearchResponse = (requestId: string, success: boolean, message: string, results: any[]) => {
+    // Send response back to extension
     window.postMessage({
       source: 'bookmark-manager-webapp',
       action: 'searchResults',
