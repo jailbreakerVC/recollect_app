@@ -103,13 +103,13 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
   const getSearchTypeIcon = (searchType: string) => {
     switch (searchType) {
       case 'semantic':
-        return <Brain className="w-3 h-3 text-purple-600" title="AI Semantic search" />;
+        return <Brain className="w-3 h-3 text-purple-600\" title="AI Semantic search" />;
       case 'trigram':
-        return <Search className="w-3 h-3 text-blue-600" title="Text similarity" />;
+        return <Search className="w-3 h-3 text-blue-600\" title="Text similarity" />;
       case 'text_fallback':
-        return <Search className="w-3 h-3 text-gray-600" title="Simple text search" />;
+        return <Search className="w-3 h-3 text-gray-600\" title="Simple text search" />;
       default:
-        return <Search className="w-3 h-3 text-gray-600" title="Fallback search" />;
+        return <Search className="w-3 h-3 text-gray-600\" title="Fallback search" />;
     }
   };
 
@@ -324,7 +324,7 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
             <div className="mt-3 p-3 bg-orange-100 border border-orange-200 rounded">
               <p className="text-sm text-orange-800">
                 <strong>⚡ Action Required:</strong> You have {embeddingStats.needsEmbeddings} bookmarks without AI embeddings. 
-                Click "Generate Embeddings" above to enable full semantic search capabilities.
+                Click "Generate Embeddings\" above to enable full semantic search capabilities.
               </p>
             </div>
           )}
@@ -342,13 +342,13 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
   const getSearchTypeIcon = (searchType: string) => {
     switch (searchType) {
       case 'semantic':
-        return <Brain className="w-3 h-3 text-purple-600" title="AI Semantic search" />;
+        return <Brain className="w-3 h-3 text-purple-600\" title="AI Semantic search" />;
       case 'trigram':
-        return <Search className="w-3 h-3 text-blue-600" title="Text similarity" />;
+        return <Search className="w-3 h-3 text-blue-600\" title="Text similarity" />;
       case 'text_fallback':
-        return <Search className="w-3 h-3 text-gray-600" title="Simple text search" />;
+        return <Search className="w-3 h-3 text-gray-600\" title="Simple text search" />;
       default:
-        return <Search className="w-3 h-3 text-gray-600" title="Fallback search" />;
+        return <Search className="w-3 h-3 text-gray-600\" title="Fallback search" />;
     }
   };
 
