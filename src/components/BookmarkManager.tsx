@@ -73,6 +73,8 @@ const BookmarkManager: React.FC = () => {
   useEffect(() => {
     const handleExtensionMessage = (event: MessageEvent) => {
       if (event.data.source === 'bookmark-manager-extension') {
+        console.log('📨 BookmarkManager received extension message:', event.data);
+        
         switch (event.data.action) {
           case 'searchByKeyword':
             handleKeywordSearchRequest(event.data.keyword, event.data.requestId);
@@ -89,6 +91,8 @@ const BookmarkManager: React.FC = () => {
   }, [user, bookmarks]);
 
   const handleKeywordSearchRequest = async (keyword: string, requestId: string) => {
+    console.log('🔍 Handling keyword search request:', { keyword, requestId });
+    
     if (!user) {
       sendSearchResponse(requestId, false, 'User not logged in', []);
       return;
@@ -108,6 +112,8 @@ const BookmarkManager: React.FC = () => {
   };
 
   const handlePageContextSearchRequest = async (context: any, requestId: string) => {
+    console.log('🤖 Handling page context search request:', { context, requestId });
+    
     if (!user) {
       sendSearchResponse(requestId, false, 'User not logged in', []);
       return;
@@ -127,6 +133,8 @@ const BookmarkManager: React.FC = () => {
   };
 
   const sendSearchResponse = (requestId: string, success: boolean, message: string, results: any[]) => {
+    console.log('📤 Sending search response:', { requestId, success, message, resultsCount: results.length });
+    
     // Send response back to extension
     window.postMessage({
       source: 'bookmark-manager-webapp',
@@ -141,7 +149,7 @@ const BookmarkManager: React.FC = () => {
   const searchBookmarksByKeyword = async (keyword: string) => {
     const searchTerm = keyword.toLowerCase().trim();
     
-    return bookmarks
+    const results = bookmarks
       .filter(bookmark => 
         bookmark.title.toLowerCase().includes(searchTerm) ||
         bookmark.url.toLowerCase().includes(searchTerm) ||
@@ -157,6 +165,9 @@ const BookmarkManager: React.FC = () => {
         similarity_score: calculateKeywordSimilarity(bookmark, searchTerm),
         search_type: 'keyword'
       }));
+
+    console.log(`🔍 Keyword search for "${keyword}" found ${results.length} results`);
+    return results;
   };
 
   const searchBookmarksByPageContext = async (context: any) => {
@@ -182,7 +193,7 @@ const BookmarkManager: React.FC = () => {
       .sort((a, b) => b.similarity_score - a.similarity_score)
       .slice(0, 8); // Limit to 8 results for extension display
 
-    return scoredBookmarks.map(bookmark => ({
+    const results = scoredBookmarks.map(bookmark => ({
       id: bookmark.id,
       title: bookmark.title,
       url: bookmark.url,
@@ -191,6 +202,9 @@ const BookmarkManager: React.FC = () => {
       similarity_score: bookmark.similarity_score,
       search_type: bookmark.search_type
     }));
+
+    console.log(`🤖 Context search for "${title}" found ${results.length} results`);
+    return results;
   };
 
   const calculateKeywordSimilarity = (bookmark: any, searchTerm: string): number => {
