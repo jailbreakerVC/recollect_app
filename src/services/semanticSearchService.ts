@@ -4,7 +4,7 @@ import { Logger } from '../utils/logger';
 
 export interface SemanticSearchResult extends DatabaseBookmark {
   similarity_score: number;
-  search_type: 'semantic' | 'trigram' | 'trigram_fallback';
+  search_type: 'semantic' | 'trigram' | 'trigram_fallback' | 'text_fallback';
 }
 
 export interface PageContext {
@@ -63,7 +63,9 @@ export class SemanticSearchService {
 
     } catch (error) {
       Logger.error('SemanticSearchService', 'Failed to search by page context', error);
-      throw new Error(`Semantic search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Fallback to simple text search
+      return this.performFallbackSearch(searchQuery, userId, maxResults);
     }
   }
 
@@ -99,7 +101,9 @@ export class SemanticSearchService {
       );
     } catch (error) {
       Logger.error('SemanticSearchService', 'Failed to search by query', error);
-      throw new Error(`Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Fallback to simple text search
+      return this.performFallbackSearch(query, userId, maxResults);
     }
   }
 
@@ -171,6 +175,40 @@ export class SemanticSearchService {
     return (data || []).map((result: any) => ({
       ...result,
       // Ensure we have all required DatabaseBookmark fields
+      chrome_bookmark_id: result.chrome_bookmark_id || undefined,
+      parent_id: result.parent_id || undefined,
+      created_at: result.created_at || result.date_added,
+      updated_at: result.updated_at || result.date_added,
+    }));
+  }
+
+  /**
+   * Perform fallback search when semantic search is not available
+   */
+  private static async performFallbackSearch(
+    query: string,
+    userId: string,
+    maxResults: number
+  ): Promise<SemanticSearchResult[]> {
+    Logger.info('SemanticSearchService', 'Performing fallback text search');
+    
+    const { data, error } = await supabase
+      .from('bookmarks')
+      .select('*')
+      .eq('user_id', userId)
+      .or(`title.ilike.%${query}%,url.ilike.%${query}%`)
+      .order('date_added', { ascending: false })
+      .limit(maxResults);
+
+    if (error) {
+      Logger.error('SemanticSearchService', 'Fallback search failed', error);
+      throw new Error(`Search failed: ${error.message}`);
+    }
+
+    return (data || []).map((result: any) => ({
+      ...result,
+      similarity_score: 0.5,
+      search_type: 'text_fallback' as const,
       chrome_bookmark_id: result.chrome_bookmark_id || undefined,
       parent_id: result.parent_id || undefined,
       created_at: result.created_at || result.date_added,
