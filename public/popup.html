@@ -144,11 +144,12 @@
     .search-results {
       background: #f0f9ff;
       border: 1px solid #bae6fd;
-      border-radius: 6px;
+      border-radius: 8px;
       padding: 12px;
       margin-bottom: 15px;
-      max-height: 300px;
+      max-height: 320px;
       overflow-y: auto;
+      transition: all 0.3s ease;
     }
     
     .search-results h4 {
@@ -162,10 +163,19 @@
       padding: 8px 0;
       border-bottom: 1px solid #e0f2fe;
       font-size: 12px;
+      transition: background-color 0.2s ease;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      padding: 8px;
     }
     
     .search-result:last-child {
       border-bottom: none;
+      margin-bottom: 0;
+    }
+    
+    .search-result:hover {
+      background-color: #f8fafc;
     }
     
     .search-result-title {
@@ -175,17 +185,19 @@
       cursor: pointer;
       text-decoration: none;
       display: block;
+      transition: color 0.2s ease;
     }
     
     .search-result-title:hover {
       text-decoration: underline;
+      color: #1d4ed8;
     }
     
     .search-result-url {
       color: #6b7280;
       font-size: 11px;
       word-break: break-all;
-      margin-bottom: 2px;
+      margin-bottom: 4px;
     }
     
     .search-result-meta {
@@ -295,12 +307,53 @@
     .feature-toggle:last-child {
       border-bottom: none;
     }
+
+    /* Auto-open highlight animation */
+    .search-results.auto-opened {
+      animation: highlightPulse 3s ease-in-out;
+    }
+
+    @keyframes highlightPulse {
+      0%, 100% { 
+        border-color: #bae6fd; 
+        box-shadow: none; 
+      }
+      50% { 
+        border-color: #10b981; 
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); 
+      }
+    }
+
+    /* Keyboard navigation styles */
+    .search-result.keyboard-selected {
+      background-color: #f0f9ff !important;
+      border: 1px solid #3b82f6;
+    }
+
+    /* Scrollbar styling for search results */
+    .search-results::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .search-results::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+
+    .search-results::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    .search-results::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="logo"></div>
-    <h3>Bookmark Manager</h3>
+    <h3>Smart Bookmark Search</h3>
   </div>
   
   <div id="status" class="status checking">
@@ -325,7 +378,7 @@
     </div>
     <h4 id="searchResultsTitle">Search Results</h4>
     <div id="searchResultsContent"></div>
-    <button class="button secondary" id="clearResults" style="margin-top: 10px;">
+    <button class="button secondary" id="clearResults" style="margin-top: 10px; font-size: 12px; padding: 8px;">
       Clear Results
     </button>
   </div>
@@ -360,7 +413,10 @@
   </div>
   
   <div class="info">
-    Right-click selected text to search bookmarks. The extension automatically finds related bookmarks as you browse.
+    <strong>🎯 Smart Search Active!</strong><br>
+    Right-click selected text to search bookmarks. Auto-analysis finds related bookmarks as you browse.
+    <br><br>
+    <strong>⌨️ Tip:</strong> Use ↑↓ arrow keys and Enter to navigate results when popup opens.
   </div>
 
   <script src="popup.js"></script>

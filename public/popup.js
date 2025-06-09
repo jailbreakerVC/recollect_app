@@ -1,4 +1,4 @@
-// Chrome Extension Popup Script - Enhanced with Context Search Results
+// Chrome Extension Popup Script - Enhanced with Auto-Opening Support
 class PopupManager {
   constructor() {
     this.isConnected = false;
@@ -12,15 +12,47 @@ class PopupManager {
   }
 
   init() {
-    console.log('🚀 Popup initializing with context search support...');
+    console.log('🚀 Popup initializing with auto-opening support...');
     
     this.cacheElements();
     this.setupEventListeners();
     this.loadStoredData();
     this.startConnectionMonitoring();
     this.loadSearchResults();
+    this.handleAutoOpen();
     
     console.log('✅ Popup initialized successfully');
+  }
+
+  handleAutoOpen() {
+    // Check if popup was auto-opened due to search results
+    chrome.storage.local.get(['lastSearchResults'], (result) => {
+      const searchData = result.lastSearchResults;
+      
+      if (searchData && searchData.timestamp) {
+        const timeSinceSearch = Date.now() - searchData.timestamp;
+        
+        // If search was recent (within 5 seconds), it was likely auto-opened
+        if (timeSinceSearch < 5000) {
+          console.log('🎯 Popup auto-opened with fresh search results');
+          
+          // Clear the badge since user is now viewing results
+          chrome.action.setBadgeText({ text: '' });
+          
+          // Highlight the search results section
+          if (this.elements.searchResults && searchData.results.length > 0) {
+            this.elements.searchResults.style.border = '2px solid #10b981';
+            this.elements.searchResults.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
+            
+            // Remove highlight after 3 seconds
+            setTimeout(() => {
+              this.elements.searchResults.style.border = '';
+              this.elements.searchResults.style.boxShadow = '';
+            }, 3000);
+          }
+        }
+      }
+    });
   }
 
   cacheElements() {
@@ -54,6 +86,14 @@ class PopupManager {
     // Listen for messages from background script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleBackgroundMessage(message, sender, sendResponse);
+    });
+
+    // Listen for storage changes (for real-time updates)
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local' && changes.lastSearchResults) {
+        console.log('🔄 Search results updated, refreshing display');
+        this.loadSearchResults();
+      }
     });
   }
 
@@ -114,16 +154,23 @@ class PopupManager {
     // Update title based on search type
     const searchTypeLabels = {
       keyword: '🔍 Keyword Search Results',
-      context: '🤖 Related Bookmarks',
+      context: '🤖 Related Bookmarks Found',
       manual: '📋 Search Results'
     };
     
     this.elements.searchResultsTitle.textContent = searchTypeLabels[searchType] || '📋 Search Results';
 
+    // Add timestamp info for recent searches
+    const timeSinceSearch = Date.now() - timestamp;
+    if (timeSinceSearch < 10000) { // Less than 10 seconds
+      const timeText = timeSinceSearch < 1000 ? 'just now' : `${Math.round(timeSinceSearch / 1000)}s ago`;
+      this.elements.searchResultsTitle.textContent += ` (${timeText})`;
+    }
+
     // Display results
-    const resultsHtml = results.map(result => `
-      <div class="search-result">
-        <a href="${result.url}" target="_blank" class="search-result-title">
+    const resultsHtml = results.map((result, index) => `
+      <div class="search-result" data-index="${index}">
+        <a href="${result.url}" target="_blank" class="search-result-title" data-url="${result.url}">
           ${this.truncateText(result.title, 45)}
         </a>
         <div class="search-result-url">${this.truncateText(result.url, 50)}</div>
@@ -138,12 +185,63 @@ class PopupManager {
     this.elements.searchResults.style.display = 'block';
 
     // Add click handlers for opening bookmarks
-    this.elements.searchResultsContent.querySelectorAll('.search-result-title').forEach(link => {
+    this.elements.searchResultsContent.querySelectorAll('.search-result-title').forEach((link, index) => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
-        chrome.tabs.create({ url: link.href });
+        
+        console.log(`📖 Opening bookmark: ${link.dataset.url}`);
+        
+        // Open in new tab
+        chrome.tabs.create({ url: link.dataset.url });
+        
+        // Close popup after opening bookmark
         window.close();
       });
+    });
+
+    // Add keyboard navigation
+    this.setupKeyboardNavigation();
+  }
+
+  setupKeyboardNavigation() {
+    const results = this.elements.searchResultsContent.querySelectorAll('.search-result');
+    let selectedIndex = 0;
+
+    // Highlight first result
+    if (results.length > 0) {
+      results[0].style.backgroundColor = '#f0f9ff';
+    }
+
+    // Handle keyboard events
+    document.addEventListener('keydown', (e) => {
+      if (results.length === 0) return;
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          results[selectedIndex].style.backgroundColor = '';
+          selectedIndex = (selectedIndex + 1) % results.length;
+          results[selectedIndex].style.backgroundColor = '#f0f9ff';
+          results[selectedIndex].scrollIntoView({ block: 'nearest' });
+          break;
+          
+        case 'ArrowUp':
+          e.preventDefault();
+          results[selectedIndex].style.backgroundColor = '';
+          selectedIndex = selectedIndex === 0 ? results.length - 1 : selectedIndex - 1;
+          results[selectedIndex].style.backgroundColor = '#f0f9ff';
+          results[selectedIndex].scrollIntoView({ block: 'nearest' });
+          break;
+          
+        case 'Enter':
+          e.preventDefault();
+          const selectedLink = results[selectedIndex].querySelector('.search-result-title');
+          if (selectedLink) {
+            chrome.tabs.create({ url: selectedLink.dataset.url });
+            window.close();
+          }
+          break;
+      }
     });
   }
 
@@ -158,9 +256,51 @@ class PopupManager {
       });
       
       this.hideSearchResults();
+      
+      // Show confirmation
+      this.showTemporaryMessage('Search results cleared');
+      
     } catch (error) {
       console.log('Could not clear search results:', error.message);
     }
+  }
+
+  showTemporaryMessage(message) {
+    // Create temporary message element
+    const messageEl = document.createElement('div');
+    messageEl.className = 'temporary-message';
+    messageEl.textContent = message;
+    messageEl.style.cssText = `
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #10b981;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      z-index: 1000;
+      animation: fadeInOut 2s ease-in-out;
+    `;
+    
+    // Add animation
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInOut {
+        0%, 100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+        20%, 80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    document.body.appendChild(messageEl);
+    
+    // Remove after animation
+    setTimeout(() => {
+      messageEl.remove();
+      style.remove();
+    }, 2000);
   }
 
   getSearchTypeLabel(searchType) {

@@ -1,4 +1,4 @@
-// Chrome Extension Background Script - Enhanced with Context Menu and Page Analysis
+// Chrome Extension Background Script - Enhanced with Auto-Opening Popup
 class BackgroundManager {
   constructor() {
     this.contextMenuEnabled = true;
@@ -10,7 +10,7 @@ class BackgroundManager {
   }
 
   init() {
-    console.log('🚀 Background script initializing with context menu and page analysis...');
+    console.log('🚀 Background script initializing with auto-opening popup...');
     
     this.setupEventListeners();
     this.setupBookmarkListeners();
@@ -88,8 +88,8 @@ class BackgroundManager {
       // Send search request to web app
       const results = await this.searchBookmarksByKeyword(selectedText);
       
-      // Show results in extension popup or notification
-      this.showSearchResults(results, selectedText, 'keyword');
+      // Show results and auto-open popup
+      await this.showSearchResults(results, selectedText, 'keyword', true);
       
     } catch (error) {
       console.error('Context menu search failed:', error);
@@ -136,8 +136,8 @@ class BackgroundManager {
         if (results.length > 0) {
           console.log(`🎯 Found ${results.length} related bookmarks for page: ${context.title}`);
           
-          // Show contextual suggestions
-          this.showSearchResults(results, context.title, 'context');
+          // Show contextual suggestions and auto-open popup
+          await this.showSearchResults(results, context.title, 'context', true);
         }
       }
     } catch (error) {
@@ -334,7 +334,7 @@ class BackgroundManager {
     }
   }
 
-  showSearchResults(results, query, searchType) {
+  async showSearchResults(results, query, searchType, autoOpen = false) {
     console.log(`📋 Showing ${results.length} search results for "${query}" (${searchType})`);
     
     // Store results for popup to display
@@ -352,19 +352,70 @@ class BackgroundManager {
       chrome.action.setBadgeText({ text: results.length.toString() });
       chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
       
-      // Clear badge after 10 seconds
+      // Auto-open popup if requested and results found
+      if (autoOpen) {
+        console.log('🚀 Auto-opening extension popup with search results');
+        await this.openExtensionPopup();
+      }
+      
+      // Clear badge after 30 seconds if popup wasn't opened
       setTimeout(() => {
         chrome.action.setBadgeText({ text: '' });
-      }, 10000);
+      }, 30000);
     }
 
-    // Send notification for context searches
-    if (searchType === 'context' && results.length > 0) {
+    // Send notification for context searches (but don't show if popup is opening)
+    if (searchType === 'context' && results.length > 0 && !autoOpen) {
       chrome.notifications.create({
         type: 'basic',
         iconUrl: 'icon48.png',
         title: 'Related Bookmarks Found',
         message: `Found ${results.length} bookmarks related to "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}"`
+      });
+    }
+  }
+
+  async openExtensionPopup() {
+    try {
+      // Get the current active tab
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      if (!activeTab) {
+        console.log('No active tab found, cannot open popup');
+        return;
+      }
+
+      // Try to open the popup programmatically
+      // Note: This requires the action API and works in Manifest V3
+      await chrome.action.openPopup();
+      
+      console.log('✅ Extension popup opened successfully');
+      
+    } catch (error) {
+      console.log('⚠️ Could not auto-open popup (this is normal in some browsers):', error.message);
+      
+      // Fallback: Show a more prominent notification
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icon48.png',
+        title: 'Bookmark Search Results Ready',
+        message: 'Click the extension icon to view your search results!',
+        buttons: [
+          { title: 'View Results' }
+        ]
+      });
+      
+      // Handle notification click to open popup
+      chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+        if (buttonIndex === 0) {
+          // Clear the notification
+          chrome.notifications.clear(notificationId);
+          
+          // Try to open popup again or focus on extension
+          chrome.action.openPopup().catch(() => {
+            console.log('Manual popup opening required');
+          });
+        }
       });
     }
   }
@@ -407,10 +458,24 @@ class BackgroundManager {
         return this.handleToggleContextMenu(request, sendResponse);
       case 'togglePageAnalysis':
         return this.handleTogglePageAnalysis(request, sendResponse);
+      case 'openPopup':
+        return this.handleOpenPopup(sendResponse);
       default:
         sendResponse({ success: false, error: 'Unknown action' });
         return false;
     }
+  }
+
+  handleOpenPopup(sendResponse) {
+    this.openExtensionPopup()
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        sendResponse({ success: false, error: error.message });
+      });
+    
+    return true;
   }
 
   handleGetSearchResults(sendResponse) {
