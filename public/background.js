@@ -5,6 +5,7 @@ class BackgroundManager {
     this.pageAnalysisEnabled = true;
     this.lastPageContext = null;
     this.searchCache = new Map();
+    this.pendingSearches = new Map();
     
     this.init();
   }
@@ -40,24 +41,20 @@ class BackgroundManager {
     chrome.runtime.onConnect.addListener((port) => {
       console.log('Content script connected:', port.name);
     });
-
-    // Listen for search responses from web app
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      if (request.action === 'searchResponse') {
-        this.handleSearchResponse(request.data);
-      }
-    });
   }
 
   setupContextMenu() {
     console.log('🔍 Setting up context menu for bookmark search...');
     
-    // Create context menu item for selected text
-    chrome.contextMenus.create({
-      id: 'searchBookmarksKeyword',
-      title: 'Search Bookmarks for "%s"',
-      contexts: ['selection'],
-      documentUrlPatterns: ['http://*/*', 'https://*/*']
+    // Remove existing context menu items
+    chrome.contextMenus.removeAll(() => {
+      // Create context menu item for selected text
+      chrome.contextMenus.create({
+        id: 'searchBookmarksKeyword',
+        title: 'Search Bookmarks for "%s"',
+        contexts: ['selection'],
+        documentUrlPatterns: ['http://*/*', 'https://*/*']
+      });
     });
 
     // Handle context menu clicks
@@ -97,6 +94,10 @@ class BackgroundManager {
     console.log('🔍 Context menu search triggered for:', selectedText);
     
     try {
+      // Show immediate feedback
+      chrome.action.setBadgeText({ text: '...' });
+      chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
+      
       // Send search request to web app
       const results = await this.searchBookmarksByKeyword(selectedText);
       
@@ -107,6 +108,8 @@ class BackgroundManager {
       
     } catch (error) {
       console.error('❌ Context menu search failed:', error);
+      chrome.action.setBadgeText({ text: '!' });
+      chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
       this.showSearchError('Failed to search bookmarks: ' + error.message);
     }
   }
@@ -216,12 +219,13 @@ class BackgroundManager {
   async searchBookmarksByKeyword(keyword) {
     console.log('🔍 Searching bookmarks by keyword:', keyword);
     
+    const requestId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     return new Promise((resolve, reject) => {
-      const requestId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       let responseReceived = false;
       
       // Set up response listener
-      const responseHandler = (message) => {
+      const responseHandler = (message, sender, sendResponse) => {
         if (message.action === 'searchResponse' && 
             message.data.requestId === requestId) {
           responseReceived = true;
@@ -244,6 +248,9 @@ class BackgroundManager {
         action: 'searchByKeyword',
         keyword: keyword,
         requestId: requestId
+      }).catch(error => {
+        chrome.runtime.onMessage.removeListener(responseHandler);
+        reject(error);
       });
 
       // Timeout after 10 seconds
@@ -260,12 +267,13 @@ class BackgroundManager {
   async searchBookmarksByPageContext(context) {
     console.log('🤖 Searching bookmarks by page context:', context.title);
     
+    const requestId = `context_search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     return new Promise((resolve, reject) => {
-      const requestId = `context_search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       let responseReceived = false;
       
       // Set up response listener
-      const responseHandler = (message) => {
+      const responseHandler = (message, sender, sendResponse) => {
         if (message.action === 'searchResponse' && 
             message.data.requestId === requestId) {
           responseReceived = true;
@@ -288,6 +296,9 @@ class BackgroundManager {
         action: 'searchByPageContext',
         context: context,
         requestId: requestId
+      }).catch(error => {
+        chrome.runtime.onMessage.removeListener(responseHandler);
+        reject(error);
       });
 
       // Timeout after 10 seconds
@@ -314,13 +325,14 @@ class BackgroundManager {
       
       if (!tabs || tabs.length === 0) {
         console.log('❌ No web app tabs found for search request');
-        throw new Error('Web app not open');
+        throw new Error('Web app not open - please open http://localhost:5173');
       }
       
       let messageSent = false;
       
       for (const tab of tabs) {
         try {
+          // First try to send message directly
           await chrome.tabs.sendMessage(tab.id, {
             action: 'forwardToWebApp',
             payload: message
@@ -330,8 +342,31 @@ class BackgroundManager {
           messageSent = true;
           break;
         } catch (error) {
-          console.log(`⚠️ Tab ${tab.id} not ready:`, error.message);
-          continue;
+          console.log(`⚠️ Tab ${tab.id} not ready, trying content script injection:`, error.message);
+          
+          try {
+            // Inject content script and try again
+            await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              files: ['content.js']
+            });
+            
+            // Wait a moment for injection
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Try sending message again
+            await chrome.tabs.sendMessage(tab.id, {
+              action: 'forwardToWebApp',
+              payload: message
+            });
+            
+            console.log(`✅ Search request sent to tab ${tab.id} after injection`);
+            messageSent = true;
+            break;
+          } catch (injectionError) {
+            console.log(`❌ Failed to inject content script into tab ${tab.id}:`, injectionError.message);
+            continue;
+          }
         }
       }
       
@@ -342,11 +377,6 @@ class BackgroundManager {
       console.error('❌ Error sending message to web app:', error);
       throw error;
     }
-  }
-
-  handleSearchResponse(data) {
-    console.log('📨 Received search response:', data);
-    // This will be handled by the promise resolvers in search functions
   }
 
   async showSearchResults(results, query, searchType, autoOpen = false) {
@@ -372,7 +402,34 @@ class BackgroundManager {
       // Auto-open popup if requested and results found
       if (autoOpen) {
         console.log('🚀 Auto-opening extension popup with search results');
-        await this.openExtensionPopup();
+        
+        // Try multiple methods to open popup
+        try {
+          await chrome.action.openPopup();
+          console.log('✅ Popup opened via chrome.action.openPopup()');
+        } catch (error) {
+          console.log('⚠️ chrome.action.openPopup() failed:', error.message);
+          
+          // Fallback: Show notification with action
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icon48.png',
+            title: `${results.length} Bookmark${results.length > 1 ? 's' : ''} Found`,
+            message: `Found bookmarks for "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}". Click extension icon to view.`,
+            buttons: [{ title: 'View Results' }]
+          });
+          
+          // Handle notification click
+          chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+            if (buttonIndex === 0) {
+              chrome.notifications.clear(notificationId);
+            }
+          });
+          
+          chrome.notifications.onClicked.addListener((notificationId) => {
+            chrome.notifications.clear(notificationId);
+          });
+        }
       }
       
       // Clear badge after 30 seconds if popup wasn't opened
@@ -382,57 +439,16 @@ class BackgroundManager {
     } else {
       // Clear badge if no results
       chrome.action.setBadgeText({ text: '' });
-    }
-
-    // Send notification for context searches with results
-    if (searchType === 'context' && results.length > 0) {
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icon48.png',
-        title: 'Related Bookmarks Found',
-        message: `Found ${results.length} bookmarks related to "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}"`
-      });
-    }
-  }
-
-  async openExtensionPopup() {
-    try {
-      console.log('🚀 Attempting to open extension popup...');
       
-      // Try to open the popup programmatically
-      await chrome.action.openPopup();
-      
-      console.log('✅ Extension popup opened successfully');
-      
-    } catch (error) {
-      console.log('⚠️ Could not auto-open popup:', error.message);
-      
-      // Fallback: Show a notification with action
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icon48.png',
-        title: 'Bookmark Search Results Ready',
-        message: 'Click the extension icon to view your search results!',
-        buttons: [
-          { title: 'View Results' }
-        ]
-      });
-      
-      // Handle notification click
-      chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-        if (buttonIndex === 0) {
-          chrome.notifications.clear(notificationId);
-          // The user will need to click the extension icon manually
-        }
-      });
-      
-      // Also handle notification click to try opening popup
-      chrome.notifications.onClicked.addListener((notificationId) => {
-        chrome.notifications.clear(notificationId);
-        chrome.action.openPopup().catch(() => {
-          console.log('Manual popup opening required');
+      if (autoOpen && searchType === 'keyword') {
+        // Show "no results" notification for manual searches
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icon48.png',
+          title: 'No Bookmarks Found',
+          message: `No bookmarks found for "${query}"`
         });
-      });
+      }
     }
   }
 
@@ -445,6 +461,11 @@ class BackgroundManager {
       title: 'Bookmark Search Failed',
       message: message
     });
+    
+    // Clear error badge after 5 seconds
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 5000);
   }
 
   isValidUrl(url) {
@@ -454,6 +475,7 @@ class BackgroundManager {
            !url.startsWith('moz-extension://') &&
            !url.startsWith('about:') &&
            !url.startsWith('edge://') &&
+           !url.startsWith('file://') &&
            (url.startsWith('http://') || url.startsWith('https://'));
   }
 
@@ -481,14 +503,45 @@ class BackgroundManager {
         this.handleSearchResponse(request.data);
         sendResponse({ success: true });
         return false;
+      case 'testSearch':
+        return this.handleTestSearch(request, sendResponse);
       default:
         sendResponse({ success: false, error: 'Unknown action' });
         return false;
     }
   }
 
+  handleTestSearch(request, sendResponse) {
+    console.log('🧪 Testing search functionality');
+    
+    // Test with a simple keyword search
+    this.searchBookmarksByKeyword('test')
+      .then(results => {
+        console.log('✅ Test search completed:', results.length, 'results');
+        sendResponse({ 
+          success: true, 
+          results: results,
+          message: `Test search found ${results.length} results`
+        });
+      })
+      .catch(error => {
+        console.error('❌ Test search failed:', error);
+        sendResponse({ 
+          success: false, 
+          error: error.message 
+        });
+      });
+    
+    return true;
+  }
+
+  handleSearchResponse(data) {
+    console.log('📨 Received search response:', data);
+    // Response handling is done in the promise resolvers
+  }
+
   handleOpenPopup(sendResponse) {
-    this.openExtensionPopup()
+    chrome.action.openPopup()
       .then(() => {
         sendResponse({ success: true });
       })

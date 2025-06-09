@@ -63,6 +63,7 @@ class PopupManager {
       syncBookmarksBtn: document.getElementById('syncBookmarks'),
       refreshResultsBtn: document.getElementById('refreshResults'),
       clearResultsBtn: document.getElementById('clearResults'),
+      testSearchBtn: document.getElementById('testSearch'),
       contextMenuToggle: document.getElementById('contextMenuToggle'),
       pageAnalysisToggle: document.getElementById('pageAnalysisToggle'),
       searchResults: document.getElementById('searchResults'),
@@ -78,6 +79,7 @@ class PopupManager {
     this.elements.syncBookmarksBtn.addEventListener('click', () => this.syncBookmarks());
     this.elements.refreshResultsBtn.addEventListener('click', () => this.loadSearchResults());
     this.elements.clearResultsBtn.addEventListener('click', () => this.clearSearchResults());
+    this.elements.testSearchBtn.addEventListener('click', () => this.testSearchFunction());
     this.elements.contextMenuToggle.addEventListener('change', (e) => this.toggleContextMenu(e.target.checked));
     this.elements.pageAnalysisToggle.addEventListener('change', (e) => this.togglePageAnalysis(e.target.checked));
     
@@ -93,6 +95,33 @@ class PopupManager {
         this.loadSearchResults();
       }
     });
+  }
+
+  async testSearchFunction() {
+    console.log('🧪 Testing search function...');
+    
+    this.elements.testSearchBtn.disabled = true;
+    this.elements.testSearchBtn.innerHTML = '🧪 Testing...';
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'testSearch'
+      });
+
+      if (response?.success) {
+        this.showTemporaryMessage(`✅ Test passed: ${response.message}`, 'success');
+        console.log('✅ Search test successful:', response);
+      } else {
+        this.showTemporaryMessage(`❌ Test failed: ${response.error}`, 'error');
+        console.error('❌ Search test failed:', response);
+      }
+    } catch (error) {
+      this.showTemporaryMessage(`❌ Test error: ${error.message}`, 'error');
+      console.error('❌ Search test error:', error);
+    } finally {
+      this.elements.testSearchBtn.disabled = false;
+      this.elements.testSearchBtn.innerHTML = '🧪 Test Search Function';
+    }
   }
 
   handleBackgroundMessage(message, sender, sendResponse) {
@@ -261,30 +290,42 @@ class PopupManager {
       this.hideSearchResults();
       
       // Show confirmation
-      this.showTemporaryMessage('Search results cleared');
+      this.showTemporaryMessage('Search results cleared', 'success');
       
     } catch (error) {
       console.log('Could not clear search results:', error.message);
     }
   }
 
-  showTemporaryMessage(message) {
+  showTemporaryMessage(message, type = 'success') {
     // Create temporary message element
     const messageEl = document.createElement('div');
-    messageEl.className = 'temporary-message';
+    messageEl.className = `temporary-message ${type}`;
     messageEl.textContent = message;
+    
+    const colors = {
+      success: { bg: '#10b981', border: '#059669' },
+      error: { bg: '#ef4444', border: '#dc2626' },
+      info: { bg: '#3b82f6', border: '#2563eb' }
+    };
+    
+    const color = colors[type] || colors.success;
+    
     messageEl.style.cssText = `
       position: fixed;
       top: 10px;
       left: 50%;
       transform: translateX(-50%);
-      background: #10b981;
+      background: ${color.bg};
+      border: 1px solid ${color.border};
       color: white;
       padding: 8px 16px;
       border-radius: 6px;
       font-size: 12px;
       z-index: 1000;
-      animation: fadeInOut 2s ease-in-out;
+      animation: fadeInOut 3s ease-in-out;
+      max-width: 300px;
+      text-align: center;
     `;
     
     // Add animation
@@ -292,7 +333,7 @@ class PopupManager {
     style.textContent = `
       @keyframes fadeInOut {
         0%, 100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-        20%, 80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        15%, 85% { opacity: 1; transform: translateX(-50%) translateY(0); }
       }
     `;
     document.head.appendChild(style);
@@ -303,7 +344,7 @@ class PopupManager {
     setTimeout(() => {
       messageEl.remove();
       style.remove();
-    }, 2000);
+    }, 3000);
   }
 
   getSearchTypeLabel(searchType) {
