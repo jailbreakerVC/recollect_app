@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
   <style>
     body {
-      width: 350px;
+      width: 380px;
       padding: 20px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
@@ -105,11 +105,11 @@
       background: #4b5563;
     }
     
-    .button.contextual {
+    .button.search {
       background: linear-gradient(135deg, #10b981, #059669);
     }
     
-    .button.contextual:hover {
+    .button.search:hover {
       background: linear-gradient(135deg, #059669, #047857);
     }
     
@@ -141,76 +141,86 @@
       margin-bottom: 0;
     }
     
-    .contextual-results {
+    .search-results {
       background: #f0f9ff;
       border: 1px solid #bae6fd;
       border-radius: 6px;
       padding: 12px;
       margin-bottom: 15px;
-      max-height: 200px;
+      max-height: 300px;
       overflow-y: auto;
     }
     
-    .contextual-results h4 {
+    .search-results h4 {
       margin: 0 0 8px 0;
       font-size: 13px;
       color: #0369a1;
       font-weight: 600;
     }
     
-    .contextual-result {
-      padding: 6px 0;
+    .search-result {
+      padding: 8px 0;
       border-bottom: 1px solid #e0f2fe;
       font-size: 12px;
     }
     
-    .contextual-result:last-child {
+    .search-result:last-child {
       border-bottom: none;
     }
     
-    .contextual-result-title {
+    .search-result-title {
       font-weight: 500;
       color: #1e40af;
       margin-bottom: 2px;
       cursor: pointer;
       text-decoration: none;
+      display: block;
     }
     
-    .contextual-result-title:hover {
+    .search-result-title:hover {
       text-decoration: underline;
     }
     
-    .contextual-result-url {
+    .search-result-url {
       color: #6b7280;
       font-size: 11px;
       word-break: break-all;
+      margin-bottom: 2px;
     }
     
-    .contextual-result-score {
+    .search-result-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .search-result-type {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    
+    .search-result-score {
       color: #059669;
       font-size: 10px;
       font-weight: 500;
     }
     
-    .page-context {
+    .search-query {
       background: #fefce8;
       border: 1px solid #fde047;
       border-radius: 6px;
-      padding: 10px;
-      margin-bottom: 15px;
+      padding: 8px;
+      margin-bottom: 10px;
       font-size: 12px;
     }
     
-    .page-context h4 {
-      margin: 0 0 6px 0;
-      font-size: 13px;
-      color: #a16207;
+    .search-query-text {
       font-weight: 600;
-    }
-    
-    .page-context-item {
-      margin-bottom: 4px;
-      color: #92400e;
+      color: #a16207;
     }
     
     .loading {
@@ -272,6 +282,19 @@
     input:checked + .slider:before {
       transform: translateX(20px);
     }
+    
+    .feature-toggle {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 12px;
+    }
+    
+    .feature-toggle:last-child {
+      border-bottom: none;
+    }
   </style>
 </head>
 <body>
@@ -293,23 +316,18 @@
       <span>Last sync:</span>
       <span id="lastSync">Never</span>
     </div>
-    <div class="stats-item">
-      <span>Contextual Search:</span>
-      <label class="toggle-switch">
-        <input type="checkbox" id="contextualToggle" checked>
-        <span class="slider"></span>
-      </label>
+  </div>
+
+  <div id="searchResults" class="search-results" style="display: none;">
+    <div id="searchQuery" class="search-query" style="display: none;">
+      <span>🔍 Search: </span>
+      <span id="searchQueryText" class="search-query-text"></span>
     </div>
-  </div>
-
-  <div id="pageContext" class="page-context" style="display: none;">
-    <h4>📄 Current Page</h4>
-    <div id="pageContextContent"></div>
-  </div>
-
-  <div id="contextualResults" class="contextual-results" style="display: none;">
-    <h4>🔍 Related Bookmarks</h4>
-    <div id="contextualResultsContent"></div>
+    <h4 id="searchResultsTitle">Search Results</h4>
+    <div id="searchResultsContent"></div>
+    <button class="button secondary" id="clearResults" style="margin-top: 10px;">
+      Clear Results
+    </button>
   </div>
   
   <button class="button" id="openWebApp">
@@ -320,12 +338,29 @@
     🔄 Sync Bookmarks
   </button>
 
-  <button class="button contextual" id="searchContextual">
-    🎯 Find Related Bookmarks
+  <button class="button search" id="refreshResults">
+    🔍 Check for Search Results
   </button>
+
+  <div class="stats">
+    <div class="feature-toggle">
+      <span>Context Menu Search:</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="contextMenuToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="feature-toggle">
+      <span>Auto Page Analysis:</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="pageAnalysisToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
   
   <div class="info">
-    This extension enables bookmark access and contextual search for the Bookmark Manager web application.
+    Right-click selected text to search bookmarks. The extension automatically finds related bookmarks as you browse.
   </div>
 
   <script src="popup.js"></script>

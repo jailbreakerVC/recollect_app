@@ -1,25 +1,24 @@
-// Chrome Extension Popup Script - Enhanced with Contextual Search
+// Chrome Extension Popup Script - Enhanced with Context Search Results
 class PopupManager {
   constructor() {
     this.isConnected = false;
     this.bookmarkCount = 0;
     this.isSyncing = false;
-    this.contextualSearchEnabled = true;
-    this.currentPageContext = null;
-    this.contextualResults = [];
+    this.contextMenuEnabled = true;
+    this.pageAnalysisEnabled = true;
     this.elements = {};
     
     this.init();
   }
 
   init() {
-    console.log('🚀 Popup initializing with contextual search...');
+    console.log('🚀 Popup initializing with context search support...');
     
     this.cacheElements();
     this.setupEventListeners();
     this.loadStoredData();
     this.startConnectionMonitoring();
-    this.loadContextualSearchResults();
+    this.loadSearchResults();
     
     console.log('✅ Popup initialized successfully');
   }
@@ -32,20 +31,25 @@ class PopupManager {
       lastSync: document.getElementById('lastSync'),
       openWebAppBtn: document.getElementById('openWebApp'),
       syncBookmarksBtn: document.getElementById('syncBookmarks'),
-      searchContextualBtn: document.getElementById('searchContextual'),
-      contextualToggle: document.getElementById('contextualToggle'),
-      pageContext: document.getElementById('pageContext'),
-      pageContextContent: document.getElementById('pageContextContent'),
-      contextualResults: document.getElementById('contextualResults'),
-      contextualResultsContent: document.getElementById('contextualResultsContent')
+      refreshResultsBtn: document.getElementById('refreshResults'),
+      clearResultsBtn: document.getElementById('clearResults'),
+      contextMenuToggle: document.getElementById('contextMenuToggle'),
+      pageAnalysisToggle: document.getElementById('pageAnalysisToggle'),
+      searchResults: document.getElementById('searchResults'),
+      searchQuery: document.getElementById('searchQuery'),
+      searchQueryText: document.getElementById('searchQueryText'),
+      searchResultsTitle: document.getElementById('searchResultsTitle'),
+      searchResultsContent: document.getElementById('searchResultsContent')
     };
   }
 
   setupEventListeners() {
     this.elements.openWebAppBtn.addEventListener('click', () => this.openWebApp());
     this.elements.syncBookmarksBtn.addEventListener('click', () => this.syncBookmarks());
-    this.elements.searchContextualBtn.addEventListener('click', () => this.performContextualSearch());
-    this.elements.contextualToggle.addEventListener('change', (e) => this.toggleContextualSearch(e.target.checked));
+    this.elements.refreshResultsBtn.addEventListener('click', () => this.loadSearchResults());
+    this.elements.clearResultsBtn.addEventListener('click', () => this.clearSearchResults());
+    this.elements.contextMenuToggle.addEventListener('change', (e) => this.toggleContextMenu(e.target.checked));
+    this.elements.pageAnalysisToggle.addEventListener('change', (e) => this.togglePageAnalysis(e.target.checked));
     
     // Listen for messages from background script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -66,12 +70,152 @@ class PopupManager {
       case 'syncComplete':
         this.handleSyncComplete(message.data);
         break;
-      case 'contextualSearchResults':
-        this.handleContextualSearchResults(message.results, message.context);
+      case 'searchResultsUpdated':
+        this.loadSearchResults();
         break;
     }
     
     sendResponse({ success: true });
+  }
+
+  async loadSearchResults() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'getSearchResults'
+      });
+
+      if (response?.success && response.searchData) {
+        this.displaySearchResults(response.searchData);
+      } else {
+        this.hideSearchResults();
+      }
+    } catch (error) {
+      console.log('Could not load search results:', error.message);
+      this.hideSearchResults();
+    }
+  }
+
+  displaySearchResults(searchData) {
+    const { results, query, searchType, timestamp } = searchData;
+    
+    if (!results || results.length === 0) {
+      this.hideSearchResults();
+      return;
+    }
+
+    // Show search query if available
+    if (query) {
+      this.elements.searchQueryText.textContent = query;
+      this.elements.searchQuery.style.display = 'block';
+    } else {
+      this.elements.searchQuery.style.display = 'none';
+    }
+
+    // Update title based on search type
+    const searchTypeLabels = {
+      keyword: '🔍 Keyword Search Results',
+      context: '🤖 Related Bookmarks',
+      manual: '📋 Search Results'
+    };
+    
+    this.elements.searchResultsTitle.textContent = searchTypeLabels[searchType] || '📋 Search Results';
+
+    // Display results
+    const resultsHtml = results.map(result => `
+      <div class="search-result">
+        <a href="${result.url}" target="_blank" class="search-result-title">
+          ${this.truncateText(result.title, 45)}
+        </a>
+        <div class="search-result-url">${this.truncateText(result.url, 50)}</div>
+        <div class="search-result-meta">
+          <span class="search-result-type">${this.getSearchTypeLabel(result.search_type)}</span>
+          <span class="search-result-score">${Math.round(result.similarity_score * 100)}%</span>
+        </div>
+      </div>
+    `).join('');
+    
+    this.elements.searchResultsContent.innerHTML = resultsHtml;
+    this.elements.searchResults.style.display = 'block';
+
+    // Add click handlers for opening bookmarks
+    this.elements.searchResultsContent.querySelectorAll('.search-result-title').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        chrome.tabs.create({ url: link.href });
+        window.close();
+      });
+    });
+  }
+
+  hideSearchResults() {
+    this.elements.searchResults.style.display = 'none';
+  }
+
+  async clearSearchResults() {
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'clearSearchResults'
+      });
+      
+      this.hideSearchResults();
+    } catch (error) {
+      console.log('Could not clear search results:', error.message);
+    }
+  }
+
+  getSearchTypeLabel(searchType) {
+    const labels = {
+      keyword: 'Keyword',
+      context: 'Context',
+      semantic: 'AI',
+      trigram: 'Text',
+      manual: 'Search'
+    };
+    
+    return labels[searchType] || 'Match';
+  }
+
+  truncateText(text, maxLength) {
+    if (!text) return '';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+  }
+
+  async toggleContextMenu(enabled) {
+    this.contextMenuEnabled = enabled;
+    
+    // Save preference
+    chrome.storage.local.set({ contextMenuEnabled: enabled });
+    
+    // Notify background script
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'toggleContextMenu',
+        enabled: enabled
+      });
+      
+      console.log('🔍 Context menu search:', enabled ? 'enabled' : 'disabled');
+    } catch (error) {
+      console.log('Could not toggle context menu:', error.message);
+    }
+  }
+
+  async togglePageAnalysis(enabled) {
+    this.pageAnalysisEnabled = enabled;
+    
+    // Save preference
+    chrome.storage.local.set({ pageAnalysisEnabled: enabled });
+    
+    // Notify background script
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'togglePageAnalysis',
+        enabled: enabled
+      });
+      
+      console.log('🤖 Page analysis:', enabled ? 'enabled' : 'disabled');
+    } catch (error) {
+      console.log('Could not toggle page analysis:', error.message);
+    }
   }
 
   updateStatus(connected, message) {
@@ -100,150 +244,27 @@ class PopupManager {
   }
 
   loadStoredData() {
-    chrome.storage.local.get(['lastSyncTime', 'lastBookmarkCount', 'contextualSearchEnabled'], (result) => {
+    chrome.storage.local.get([
+      'lastSyncTime', 
+      'lastBookmarkCount', 
+      'contextMenuEnabled', 
+      'pageAnalysisEnabled'
+    ], (result) => {
       if (result.lastSyncTime) {
         const lastSync = new Date(result.lastSyncTime);
         this.elements.lastSync.textContent = lastSync.toLocaleTimeString();
       }
       
-      if (result.contextualSearchEnabled !== undefined) {
-        this.contextualSearchEnabled = result.contextualSearchEnabled;
-        this.elements.contextualToggle.checked = this.contextualSearchEnabled;
+      if (result.contextMenuEnabled !== undefined) {
+        this.contextMenuEnabled = result.contextMenuEnabled;
+        this.elements.contextMenuToggle.checked = this.contextMenuEnabled;
+      }
+      
+      if (result.pageAnalysisEnabled !== undefined) {
+        this.pageAnalysisEnabled = result.pageAnalysisEnabled;
+        this.elements.pageAnalysisToggle.checked = this.pageAnalysisEnabled;
       }
     });
-  }
-
-  async loadContextualSearchResults() {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        action: 'getContextualSearchResults'
-      });
-
-      if (response?.success) {
-        this.currentPageContext = response.context;
-        this.contextualResults = response.results || [];
-        
-        this.updatePageContextDisplay();
-        this.updateContextualResultsDisplay();
-      }
-    } catch (error) {
-      console.log('Could not load contextual search results:', error.message);
-    }
-  }
-
-  updatePageContextDisplay() {
-    if (!this.currentPageContext) {
-      this.elements.pageContext.style.display = 'none';
-      return;
-    }
-
-    const context = this.currentPageContext;
-    const contextHtml = `
-      <div class="page-context-item"><strong>Title:</strong> ${this.truncateText(context.title, 40)}</div>
-      <div class="page-context-item"><strong>Domain:</strong> ${context.domain}</div>
-      ${context.technology && context.technology.length > 0 ? 
-        `<div class="page-context-item"><strong>Tech:</strong> ${context.technology.join(', ')}</div>` : ''}
-    `;
-    
-    this.elements.pageContextContent.innerHTML = contextHtml;
-    this.elements.pageContext.style.display = 'block';
-  }
-
-  updateContextualResultsDisplay() {
-    if (!this.contextualResults || this.contextualResults.length === 0) {
-      this.elements.contextualResults.style.display = 'none';
-      return;
-    }
-
-    const resultsHtml = this.contextualResults.map(result => `
-      <div class="contextual-result">
-        <a href="${result.url}" target="_blank" class="contextual-result-title">
-          ${this.truncateText(result.title, 50)}
-        </a>
-        <div class="contextual-result-url">${this.truncateText(result.url, 60)}</div>
-        <div class="contextual-result-score">
-          ${Math.round(result.similarity_score * 100)}% match (${result.search_type})
-        </div>
-      </div>
-    `).join('');
-    
-    this.elements.contextualResultsContent.innerHTML = resultsHtml;
-    this.elements.contextualResults.style.display = 'block';
-  }
-
-  truncateText(text, maxLength) {
-    if (!text) return '';
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-  }
-
-  async toggleContextualSearch(enabled) {
-    this.contextualSearchEnabled = enabled;
-    
-    // Save preference
-    chrome.storage.local.set({ contextualSearchEnabled: enabled });
-    
-    // Notify background script
-    try {
-      await chrome.runtime.sendMessage({
-        action: 'toggleContextualSearch',
-        enabled: enabled
-      });
-      
-      console.log('🔍 Contextual search:', enabled ? 'enabled' : 'disabled');
-    } catch (error) {
-      console.log('Could not toggle contextual search:', error.message);
-    }
-  }
-
-  async performContextualSearch() {
-    if (!this.contextualSearchEnabled) {
-      alert('Contextual search is disabled. Please enable it first.');
-      return;
-    }
-
-    console.log('🔍 Performing manual contextual search...');
-    
-    this.elements.searchContextualBtn.disabled = true;
-    this.elements.searchContextualBtn.innerHTML = '🔍 Searching...';
-
-    try {
-      // Get current active tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
-      if (!tab || !tab.id) {
-        throw new Error('No active tab found');
-      }
-
-      // Request contextual search
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        action: 'searchRelatedBookmarks'
-      });
-
-      if (response?.success) {
-        this.contextualResults = response.results || [];
-        this.updateContextualResultsDisplay();
-        
-        console.log(`✅ Found ${this.contextualResults.length} related bookmarks`);
-      } else {
-        throw new Error(response?.error || 'Search failed');
-      }
-    } catch (error) {
-      console.error('Contextual search failed:', error);
-      alert(`Contextual search failed: ${error.message}`);
-    } finally {
-      this.elements.searchContextualBtn.disabled = false;
-      this.elements.searchContextualBtn.innerHTML = '🎯 Find Related Bookmarks';
-    }
-  }
-
-  handleContextualSearchResults(results, context) {
-    console.log('📨 Received contextual search results:', results);
-    
-    this.contextualResults = results || [];
-    this.currentPageContext = context;
-    
-    this.updatePageContextDisplay();
-    this.updateContextualResultsDisplay();
   }
 
   startConnectionMonitoring() {

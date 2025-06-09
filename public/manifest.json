@@ -1,20 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Bookmark Manager Extension",
-  "version": "1.1.0",
-  "description": "Access and sync your Chrome bookmarks with contextual search powered by AI",
+  "version": "1.2.0",
+  "description": "Access and sync your Chrome bookmarks with smart context search and automatic page analysis",
   "permissions": [
     "bookmarks",
     "storage",
     "activeTab",
     "tabs",
-    "scripting"
+    "scripting",
+    "contextMenus",
+    "notifications"
   ],
   "host_permissions": [
     "http://localhost:*/*",
     "https://localhost:*/*",
     "https://*.netlify.app/*",
-    "https://*.vercel.app/*"
+    "https://*.vercel.app/*",
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -30,20 +34,11 @@
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": false
-    },
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": ["contextual-search.js"],
-      "run_at": "document_idle",
-      "all_frames": false
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Bookmark Manager with AI Search",
+    "default_title": "Bookmark Manager with Smart Search",
     "default_icon": {
       "16": "icon16.png",
       "32": "icon32.png",

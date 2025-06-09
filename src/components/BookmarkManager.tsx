@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, RefreshCw, Chrome, TestTube, Bug, Brain, Zap, AlertTriangle } from 'lucide-react';
+import { Bookmark, RefreshCw, Chrome, TestTube, Bug, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { extensionService } from '../services/extensionService';
@@ -9,10 +9,8 @@ import { BookmarkGrid } from './BookmarkGrid';
 import { BookmarkControls } from './BookmarkControls';
 import { StatusCards } from './StatusCards';
 import { DebugPanel } from './DebugPanel';
-import { SemanticSearchPanel } from './SemanticSearchPanel';
 import { ConnectionStatus, SortOption } from '../types';
 import { Logger } from '../utils/logger';
-import { SemanticSearchService } from '../services/semanticSearchService';
 
 const BookmarkManager: React.FC = () => {
   const { user } = useAuth();
@@ -36,12 +34,9 @@ const BookmarkManager: React.FC = () => {
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortOption>('date');
   const [showAddForm, setShowAddForm] = useState(false);
-  const [showSemanticSearch, setShowSemanticSearch] = useState(false);
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
-  const [semanticSearchAvailable, setSemanticSearchAvailable] = useState<boolean | null>(null);
-  const [needsEmbeddings, setNeedsEmbeddings] = useState(false);
 
   // Test database connection on mount
   useEffect(() => {
@@ -56,29 +51,6 @@ const BookmarkManager: React.FC = () => {
 
     testConnection();
   }, []);
-
-  // Check semantic search availability and embedding status
-  useEffect(() => {
-    const checkSemanticSearch = async () => {
-      try {
-        const available = await SemanticSearchService.testSemanticSearchAvailability();
-        setSemanticSearchAvailable(available);
-        
-        // If available and we have bookmarks, check if we need embeddings
-        if (available && bookmarks.length > 0) {
-          // Simple heuristic: if we have bookmarks but semantic search is available,
-          // we likely need to generate embeddings
-          setNeedsEmbeddings(true);
-        }
-      } catch (err) {
-        setSemanticSearchAvailable(false);
-      }
-    };
-
-    if (bookmarks.length > 0) {
-      checkSemanticSearch();
-    }
-  }, [bookmarks.length]);
 
   // Debug user context in development
   useEffect(() => {
@@ -97,77 +69,181 @@ const BookmarkManager: React.FC = () => {
     }
   }, [user]);
 
-  // Set up extension message listener for contextual search
+  // Set up extension message listener for context search
   useEffect(() => {
     const handleExtensionMessage = (event: MessageEvent) => {
-      if (event.data.source === 'bookmark-manager-extension' && 
-          event.data.action === 'searchRelatedBookmarks') {
-        handleContextualSearchRequest(event.data.context, event.data.requestId);
+      if (event.data.source === 'bookmark-manager-extension') {
+        switch (event.data.action) {
+          case 'searchByKeyword':
+            handleKeywordSearchRequest(event.data.keyword, event.data.requestId);
+            break;
+          case 'searchByPageContext':
+            handlePageContextSearchRequest(event.data.context, event.data.requestId);
+            break;
+        }
       }
     };
 
     window.addEventListener('message', handleExtensionMessage);
     return () => window.removeEventListener('message', handleExtensionMessage);
-  }, [user]);
+  }, [user, bookmarks]);
 
-  const handleContextualSearchRequest = async (context: any, requestId: string) => {
+  const handleKeywordSearchRequest = async (keyword: string, requestId: string) => {
     if (!user) {
-      window.postMessage({
-        source: 'bookmark-manager-webapp',
-        action: 'searchResults',
-        success: false,
-        error: 'User not logged in'
-      }, window.location.origin);
+      sendSearchResponse(requestId, false, 'User not logged in', []);
       return;
     }
 
     try {
-      Logger.info('BookmarkManager', 'Handling contextual search request', context);
+      Logger.info('BookmarkManager', 'Handling keyword search request', { keyword });
       
-      // Import semantic search service dynamically to avoid circular imports
-      const { SemanticSearchService } = await import('../services/semanticSearchService');
+      const results = await searchBookmarksByKeyword(keyword);
+      sendSearchResponse(requestId, true, 'Search completed', results);
       
-      const results = await SemanticSearchService.searchByPageContext(context, user.id, {
-        maxResults: 5,
-        similarityThreshold: 0.3,
-        includeUrl: false // Don't include the current page
-      });
-
-      window.postMessage({
-        source: 'bookmark-manager-webapp',
-        action: 'searchResults',
-        success: true,
-        results: results
-      }, window.location.origin);
-
-      Logger.info('BookmarkManager', `Sent ${results.length} contextual search results to extension`);
+      Logger.info('BookmarkManager', `Sent ${results.length} search results for keyword: ${keyword}`);
     } catch (error) {
-      Logger.error('BookmarkManager', 'Contextual search failed', error);
-      
-      window.postMessage({
-        source: 'bookmark-manager-webapp',
-        action: 'searchResults',
-        success: false,
-        error: error instanceof Error ? error.message : 'Search failed'
-      }, window.location.origin);
+      Logger.error('BookmarkManager', 'Keyword search failed', error);
+      sendSearchResponse(requestId, false, error instanceof Error ? error.message : 'Search failed', []);
     }
   };
 
-  const handleGenerateEmbeddings = async () => {
-    if (!user) return;
-
-    const loadingToastId = showLoading('Generating AI Embeddings', 'Creating embeddings for your bookmarks...');
+  const handlePageContextSearchRequest = async (context: any, requestId: string) => {
+    if (!user) {
+      sendSearchResponse(requestId, false, 'User not logged in', []);
+      return;
+    }
 
     try {
-      const count = await SemanticSearchService.updateUserEmbeddings(user.id);
-      removeToast(loadingToastId);
-      showSuccess('Embeddings Generated', `Successfully created AI embeddings for ${count} bookmarks. Semantic search is now fully enabled!`);
-      setNeedsEmbeddings(false);
-    } catch (err) {
-      removeToast(loadingToastId);
-      const message = err instanceof Error ? err.message : 'Failed to generate embeddings';
-      showError('Embedding Generation Failed', message);
-      Logger.error('BookmarkManager', 'Failed to generate embeddings', err);
+      Logger.info('BookmarkManager', 'Handling page context search request', context);
+      
+      const results = await searchBookmarksByPageContext(context);
+      sendSearchResponse(requestId, true, 'Context search completed', results);
+      
+      Logger.info('BookmarkManager', `Sent ${results.length} contextual search results for page: ${context.title}`);
+    } catch (error) {
+      Logger.error('BookmarkManager', 'Page context search failed', error);
+      sendSearchResponse(requestId, false, error instanceof Error ? error.message : 'Search failed', []);
+    }
+  };
+
+  const sendSearchResponse = (requestId: string, success: boolean, message: string, results: any[]) => {
+    window.postMessage({
+      source: 'bookmark-manager-webapp',
+      action: 'searchResults',
+      requestId,
+      success,
+      message,
+      results
+    }, window.location.origin);
+  };
+
+  const searchBookmarksByKeyword = async (keyword: string) => {
+    const searchTerm = keyword.toLowerCase().trim();
+    
+    return bookmarks
+      .filter(bookmark => 
+        bookmark.title.toLowerCase().includes(searchTerm) ||
+        bookmark.url.toLowerCase().includes(searchTerm) ||
+        (bookmark.folder && bookmark.folder.toLowerCase().includes(searchTerm))
+      )
+      .slice(0, 10) // Limit to 10 results for extension display
+      .map(bookmark => ({
+        id: bookmark.id,
+        title: bookmark.title,
+        url: bookmark.url,
+        folder: bookmark.folder,
+        date_added: bookmark.date_added,
+        similarity_score: calculateKeywordSimilarity(bookmark, searchTerm),
+        search_type: 'keyword'
+      }));
+  };
+
+  const searchBookmarksByPageContext = async (context: any) => {
+    const { title, url, domain, keywords = [] } = context;
+    
+    // Extract search terms from page context
+    const searchTerms = [
+      ...title.toLowerCase().split(/\s+/).filter((word: string) => word.length > 3),
+      ...keywords.map((k: string) => k.toLowerCase()),
+      domain.replace(/\./g, ' ')
+    ].filter(Boolean);
+
+    // Score bookmarks based on context relevance
+    const scoredBookmarks = bookmarks
+      .map(bookmark => {
+        const score = calculateContextSimilarity(bookmark, searchTerms, domain);
+        return { ...bookmark, similarity_score: score, search_type: 'context' };
+      })
+      .filter(bookmark => 
+        bookmark.similarity_score > 0.1 && // Minimum relevance threshold
+        !bookmark.url.includes(domain) // Exclude current domain
+      )
+      .sort((a, b) => b.similarity_score - a.similarity_score)
+      .slice(0, 8); // Limit to 8 results for extension display
+
+    return scoredBookmarks.map(bookmark => ({
+      id: bookmark.id,
+      title: bookmark.title,
+      url: bookmark.url,
+      folder: bookmark.folder,
+      date_added: bookmark.date_added,
+      similarity_score: bookmark.similarity_score,
+      search_type: bookmark.search_type
+    }));
+  };
+
+  const calculateKeywordSimilarity = (bookmark: any, searchTerm: string): number => {
+    let score = 0;
+    
+    // Title match (highest weight)
+    if (bookmark.title.toLowerCase().includes(searchTerm)) {
+      score += 0.8;
+    }
+    
+    // URL match
+    if (bookmark.url.toLowerCase().includes(searchTerm)) {
+      score += 0.6;
+    }
+    
+    // Folder match
+    if (bookmark.folder && bookmark.folder.toLowerCase().includes(searchTerm)) {
+      score += 0.4;
+    }
+    
+    return Math.min(score, 1.0);
+  };
+
+  const calculateContextSimilarity = (bookmark: any, searchTerms: string[], domain: string): number => {
+    let score = 0;
+    const bookmarkText = `${bookmark.title} ${bookmark.url} ${bookmark.folder || ''}`.toLowerCase();
+    
+    // Check for term matches
+    const matchingTerms = searchTerms.filter(term => bookmarkText.includes(term));
+    score += (matchingTerms.length / searchTerms.length) * 0.7;
+    
+    // Domain similarity bonus
+    const bookmarkDomain = extractDomain(bookmark.url);
+    if (bookmarkDomain && bookmarkDomain.includes(domain.split('.')[0])) {
+      score += 0.3;
+    }
+    
+    // Technology/category matching
+    const techKeywords = ['github', 'docs', 'api', 'tutorial', 'guide', 'documentation'];
+    const hasTechMatch = techKeywords.some(tech => 
+      bookmarkText.includes(tech) && searchTerms.some(term => term.includes(tech))
+    );
+    if (hasTechMatch) {
+      score += 0.2;
+    }
+    
+    return Math.min(score, 1.0);
+  };
+
+  const extractDomain = (url: string): string => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return '';
     }
   };
 
@@ -298,11 +374,6 @@ const BookmarkManager: React.FC = () => {
           'Sync Complete', 
           `Successfully synced ${result.total} bookmarks. Changes: ${changes.join(', ')}`
         );
-
-        // If we have new bookmarks and semantic search is available, suggest generating embeddings
-        if (result.inserted > 0 && semanticSearchAvailable) {
-          setNeedsEmbeddings(true);
-        }
       } else {
         showSuccess('Sync Complete', 'Your bookmarks are already up to date');
       }
@@ -488,14 +559,6 @@ const BookmarkManager: React.FC = () => {
                 </>
               )}
               <button
-                onClick={() => setShowSemanticSearch(!showSemanticSearch)}
-                className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                title="Semantic search with AI"
-              >
-                <Brain className="w-4 h-4 mr-2" />
-                AI Search
-              </button>
-              <button
                 onClick={handleRefresh}
                 disabled={loading}
                 className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
@@ -532,51 +595,35 @@ const BookmarkManager: React.FC = () => {
           lastSyncResult={lastSyncResult}
         />
 
-        {/* AI Embeddings Call-to-Action */}
-        {semanticSearchAvailable && needsEmbeddings && bookmarks.length > 0 && (
-          <div className="mb-8 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-6">
+        {/* Context Search Feature Info */}
+        {extensionStatus === 'available' && bookmarks.length > 0 && (
+          <div className="mb-8 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl p-6">
             <div className="flex items-start">
               <div className="flex-shrink-0">
-                <div className="bg-purple-100 p-3 rounded-lg">
-                  <Brain className="w-6 h-6 text-purple-600" />
+                <div className="bg-green-100 p-3 rounded-lg">
+                  <Search className="w-6 h-6 text-green-600" />
                 </div>
               </div>
               <div className="ml-4 flex-1">
-                <h3 className="text-lg font-semibold text-purple-900 mb-2">
-                  🚀 Enable AI-Powered Semantic Search
+                <h3 className="text-lg font-semibold text-green-900 mb-2">
+                  🎯 Smart Context Search Active
                 </h3>
-                <p className="text-purple-800 mb-4">
-                  You have {bookmarks.length} bookmarks ready for AI enhancement! Generate embeddings to unlock 
-                  powerful semantic search that finds bookmarks by meaning and context, not just keywords.
+                <p className="text-green-800 mb-4">
+                  Your Chrome extension now provides intelligent bookmark search! Right-click any text to search your bookmarks, 
+                  and get automatic suggestions based on the pages you visit.
                 </p>
-                <div className="flex items-center space-x-4">
-                  <button
-                    onClick={handleGenerateEmbeddings}
-                    disabled={loading}
-                    className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
-                  >
-                    <Zap className="w-4 h-4 mr-2" />
-                    Generate AI Embeddings
-                  </button>
-                  <span className="text-sm text-purple-700">
-                    ⚡ One-time setup • Takes ~30 seconds
-                  </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="bg-white bg-opacity-50 p-3 rounded-lg">
+                    <h4 className="font-semibold text-green-900 mb-1">📝 Context Menu Search</h4>
+                    <p className="text-green-700">Select any text on a webpage, right-click, and choose "Search Bookmarks" to find related bookmarks instantly.</p>
+                  </div>
+                  <div className="bg-white bg-opacity-50 p-3 rounded-lg">
+                    <h4 className="font-semibold text-green-900 mb-1">🤖 Auto Page Analysis</h4>
+                    <p className="text-green-700">The extension automatically analyzes pages you visit and suggests relevant bookmarks from your collection.</p>
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={() => setNeedsEmbeddings(false)}
-                className="text-purple-400 hover:text-purple-600 ml-4"
-              >
-                ×
-              </button>
             </div>
-          </div>
-        )}
-
-        {/* Semantic Search Panel */}
-        {showSemanticSearch && (
-          <div className="mb-8">
-            <SemanticSearchPanel onClose={() => setShowSemanticSearch(false)} />
           </div>
         )}
 

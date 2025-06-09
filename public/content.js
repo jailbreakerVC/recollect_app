@@ -1,16 +1,17 @@
-// Chrome Extension Content Script - Refactored for better reliability
+// Chrome Extension Content Script - Enhanced for Context Search
 class ContentScriptManager {
   constructor() {
     this.isInitialized = false;
     this.messageQueue = [];
     this.port = null;
+    this.responseListeners = new Map();
     
     this.init();
   }
 
   // Initialize content script
   init() {
-    console.log('🔌 Content script initializing...');
+    console.log('🔌 Content script initializing with context search support...');
     
     this.setupMessageHandlers();
     this.injectExtensionFlag();
@@ -95,12 +96,68 @@ class ContentScriptManager {
     switch (request.action) {
       case 'notifyWebApp':
         return this.handleNotifyWebApp(request, sendResponse);
+      case 'forwardToWebApp':
+        return this.handleForwardToWebApp(request, sendResponse);
+      case 'setupResponseListener':
+        return this.handleSetupResponseListener(request, sendResponse);
       case 'testConnection':
         return this.handleConnectionTest(request, sendResponse);
       default:
         sendResponse({ success: true });
         return false;
     }
+  }
+
+  // Handle forwarding messages to web app
+  handleForwardToWebApp(request, sendResponse) {
+    console.log('📤 Forwarding message to web app:', request.payload);
+    
+    // Forward the message to the web app
+    window.postMessage({
+      source: 'bookmark-manager-extension',
+      ...request.payload
+    }, window.location.origin);
+    
+    sendResponse({ success: true });
+    return false;
+  }
+
+  // Handle setting up response listeners
+  handleSetupResponseListener(request, sendResponse) {
+    console.log('🔗 Setting up response listener for search results');
+    
+    // Set up a listener for search responses from the web app
+    const responseHandler = (event) => {
+      if (event.data.source === 'bookmark-manager-webapp' && 
+          (event.data.action === 'searchResults' || event.data.requestId)) {
+        
+        console.log('📨 Received search response from web app:', event.data);
+        
+        // Forward the response to background script if needed
+        chrome.runtime.sendMessage({
+          action: 'searchResponse',
+          data: event.data
+        }).catch(() => {
+          // Background script might not be listening
+          console.log('Background script not listening for search response');
+        });
+      }
+    };
+    
+    window.addEventListener('message', responseHandler);
+    
+    // Store the handler for cleanup
+    const listenerId = `listener_${Date.now()}`;
+    this.responseListeners.set(listenerId, responseHandler);
+    
+    // Clean up after 30 seconds
+    setTimeout(() => {
+      window.removeEventListener('message', responseHandler);
+      this.responseListeners.delete(listenerId);
+    }, 30000);
+    
+    sendResponse({ success: true, listenerId });
+    return false;
   }
 
   // Handle web app notification
@@ -190,17 +247,20 @@ class ContentScriptManager {
 
   // Inject extension availability flag
   injectExtensionFlag() {
-    console.log('🚀 Injecting extension availability flag');
+    console.log('🚀 Injecting extension availability flag with context search support');
     
     const script = document.createElement('script');
     script.textContent = `
       (function() {
-        console.log('📱 Extension availability flag injected');
+        console.log('📱 Extension availability flag injected with context search');
         window.bookmarkExtensionAvailable = true;
         
         // Dispatch ready event
         window.dispatchEvent(new CustomEvent('bookmarkExtensionReady', {
-          detail: { timestamp: Date.now() }
+          detail: { 
+            timestamp: Date.now(),
+            features: ['contextSearch', 'pageAnalysis', 'contextMenu']
+          }
         }));
         
         // Set up sync completion bridge
@@ -226,7 +286,7 @@ class ContentScriptManager {
           }
         });
         
-        console.log('✅ Extension communication bridge ready');
+        console.log('✅ Extension communication bridge ready with context search support');
       })();
     `;
     
