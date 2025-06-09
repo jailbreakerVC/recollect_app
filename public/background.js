@@ -36,6 +36,11 @@ class BackgroundManager {
     // Keep service worker alive
     chrome.runtime.onConnect.addListener((port) => {
       // Content script connected
+      
+      // Handle port disconnect
+      port.onDisconnect.addListener(() => {
+        // Content script disconnected
+      });
     });
   }
 

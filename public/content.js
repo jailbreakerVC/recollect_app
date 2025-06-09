@@ -5,6 +5,7 @@ class ContentScriptManager {
     this.messageQueue = [];
     this.port = null;
     this.responseListeners = new Map();
+    this.contextValid = true;
     
     this.init();
   }
@@ -14,19 +15,82 @@ class ContentScriptManager {
     this.setupMessageHandlers();
     this.injectExtensionFlag();
     this.connectToBackground();
+    this.setupContextValidation();
     
     this.isInitialized = true;
+  }
+
+  // Set up context validation to detect when extension context becomes invalid
+  setupContextValidation() {
+    // Test context validity periodically
+    const testContext = () => {
+      try {
+        // Try to access chrome.runtime - this will throw if context is invalid
+        if (chrome.runtime && chrome.runtime.id) {
+          this.contextValid = true;
+        } else {
+          this.contextValid = false;
+        }
+      } catch (error) {
+        this.contextValid = false;
+        this.handleContextInvalidation();
+      }
+    };
+
+    // Test immediately and then every 5 seconds
+    testContext();
+    setInterval(testContext, 5000);
+
+    // Listen for extension unload/reload
+    if (chrome.runtime && chrome.runtime.onConnect) {
+      chrome.runtime.onConnect.addListener(() => {
+        this.contextValid = true;
+      });
+    }
+  }
+
+  // Handle when extension context becomes invalid
+  handleContextInvalidation() {
+    // Stop all operations and clean up
+    this.contextValid = false;
+    this.messageQueue = [];
+    this.responseListeners.clear();
+    
+    if (this.port) {
+      try {
+        this.port.disconnect();
+      } catch (e) {
+        // Port already disconnected
+      }
+      this.port = null;
+    }
+
+    // Remove all event listeners to prevent further errors
+    window.removeEventListener('message', this.globalMessageHandler);
+  }
+
+  // Check if extension context is valid before any chrome.runtime operations
+  isContextValid() {
+    try {
+      return this.contextValid && chrome.runtime && chrome.runtime.id;
+    } catch (error) {
+      this.contextValid = false;
+      return false;
+    }
   }
 
   // Set up message handlers
   setupMessageHandlers() {
     // Listen for messages from web page
-    window.addEventListener('message', (event) => this.handleWebPageMessage(event));
+    this.globalMessageHandler = this.handleWebPageMessage.bind(this);
+    window.addEventListener('message', this.globalMessageHandler);
     
-    // Listen for messages from extension
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      return this.handleExtensionMessage(request, sender, sendResponse);
-    });
+    // Listen for messages from extension (with context validation)
+    if (this.isContextValid()) {
+      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        return this.handleExtensionMessage(request, sender, sendResponse);
+      });
+    }
   }
 
   // Handle messages from web page
@@ -36,19 +100,32 @@ class ContentScriptManager {
     
     // Filter out non-bookmark manager messages
     if (!this.isBookmarkManagerMessage(event.data)) return;
-    
+
     if (event.data.source === 'bookmark-manager-webapp') {
       // Handle search responses
       if (event.data.action === 'searchResults') {
-        chrome.runtime.sendMessage({
-          action: 'searchResponse',
-          data: event.data
-        }).catch(() => {
-          // Background script not ready for search response
-        });
+        this.forwardSearchResponseToBackground(event.data);
       } else {
         this.forwardToBackground(event.data);
       }
+    }
+  }
+
+  // Forward search response to background with context validation
+  forwardSearchResponseToBackground(data) {
+    if (!this.isContextValid()) {
+      return; // Context invalid, don't attempt to send message
+    }
+
+    try {
+      chrome.runtime.sendMessage({
+        action: 'searchResponse',
+        data: data
+      }).catch(() => {
+        // Background script not ready for search response
+      });
+    } catch (error) {
+      this.handleContextInvalidation();
     }
   }
 
@@ -67,31 +144,58 @@ class ContentScriptManager {
     return !ignoredSources.some(ignored => data.source.includes(ignored));
   }
 
-  // Forward message to background script
+  // Forward message to background script with context validation
   forwardToBackground(data) {
-    chrome.runtime.sendMessage(data.payload, (response) => {
-      if (chrome.runtime.lastError) {
-        this.sendResponseToWebPage(data.requestId, {
-          success: false,
-          error: chrome.runtime.lastError.message
-        });
-      } else {
-        this.sendResponseToWebPage(data.requestId, response);
-      }
-    });
+    if (!this.isContextValid()) {
+      // Context is invalid, send error response to web page
+      this.sendResponseToWebPage(data.requestId, {
+        success: false,
+        error: 'Extension context invalidated - please reload the page'
+      });
+      return;
+    }
+
+    try {
+      chrome.runtime.sendMessage(data.payload, (response) => {
+        if (chrome.runtime.lastError) {
+          this.sendResponseToWebPage(data.requestId, {
+            success: false,
+            error: chrome.runtime.lastError.message
+          });
+        } else {
+          this.sendResponseToWebPage(data.requestId, response);
+        }
+      });
+    } catch (error) {
+      // Extension context invalidated during message sending
+      this.handleContextInvalidation();
+      this.sendResponseToWebPage(data.requestId, {
+        success: false,
+        error: 'Extension context invalidated - please reload the page'
+      });
+    }
   }
 
   // Send response back to web page
   sendResponseToWebPage(requestId, response) {
-    window.postMessage({
-      source: 'bookmark-manager-extension',
-      requestId: requestId,
-      response: response
-    }, window.location.origin);
+    try {
+      window.postMessage({
+        source: 'bookmark-manager-extension',
+        requestId: requestId,
+        response: response
+      }, window.location.origin);
+    } catch (error) {
+      // Failed to send response to web page
+    }
   }
 
   // Handle messages from extension
   handleExtensionMessage(request, sender, sendResponse) {
+    if (!this.isContextValid()) {
+      sendResponse({ success: false, error: 'Extension context invalidated' });
+      return false;
+    }
+
     switch (request.action) {
       case 'notifyWebApp':
         return this.handleNotifyWebApp(request, sendResponse);
@@ -130,12 +234,18 @@ class ContentScriptManager {
           (event.data.action === 'searchResults' || event.data.requestId)) {
         
         // Forward the response to background script
-        chrome.runtime.sendMessage({
-          action: 'searchResponse',
-          data: event.data
-        }).catch(() => {
-          // Background script might not be listening
-        });
+        if (this.isContextValid()) {
+          try {
+            chrome.runtime.sendMessage({
+              action: 'searchResponse',
+              data: event.data
+            }).catch(() => {
+              // Background script might not be listening
+            });
+          } catch (error) {
+            this.handleContextInvalidation();
+          }
+        }
       }
     };
     
@@ -215,11 +325,17 @@ class ContentScriptManager {
       if (event.data.source === 'bookmark-manager-webapp' && 
           event.data.type === 'syncComplete') {
         
-        // Notify background script
-        chrome.runtime.sendMessage({
-          action: 'syncComplete',
-          data: event.data.data
-        });
+        // Notify background script if context is valid
+        if (this.isContextValid()) {
+          try {
+            chrome.runtime.sendMessage({
+              action: 'syncComplete',
+              data: event.data.data
+            });
+          } catch (error) {
+            this.handleContextInvalidation();
+          }
+        }
         
         window.removeEventListener('message', syncCompleteListener);
       }
@@ -277,13 +393,20 @@ class ContentScriptManager {
 
   // Connect to background script
   connectToBackground() {
+    if (!this.isContextValid()) return;
+
     try {
       this.port = chrome.runtime.connect({ name: 'content-script' });
       this.port.onDisconnect.addListener(() => {
         this.port = null;
+        // Check if disconnect was due to context invalidation
+        if (!this.isContextValid()) {
+          this.handleContextInvalidation();
+        }
       });
     } catch (error) {
       // Could not connect to background script
+      this.handleContextInvalidation();
     }
   }
 }
