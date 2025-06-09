@@ -32,8 +32,8 @@ class PopupManager {
       if (searchData && searchData.timestamp) {
         const timeSinceSearch = Date.now() - searchData.timestamp;
         
-        // If search was recent (within 5 seconds), it was likely auto-opened
-        if (timeSinceSearch < 5000) {
+        // If search was recent (within 10 seconds), it was likely auto-opened
+        if (timeSinceSearch < 10000) {
           console.log('🎯 Popup auto-opened with fresh search results');
           
           // Clear the badge since user is now viewing results
@@ -41,13 +41,11 @@ class PopupManager {
           
           // Highlight the search results section
           if (this.elements.searchResults && searchData.results.length > 0) {
-            this.elements.searchResults.style.border = '2px solid #10b981';
-            this.elements.searchResults.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
+            this.elements.searchResults.classList.add('auto-opened');
             
             // Remove highlight after 3 seconds
             setTimeout(() => {
-              this.elements.searchResults.style.border = '';
-              this.elements.searchResults.style.boxShadow = '';
+              this.elements.searchResults.classList.remove('auto-opened');
             }, 3000);
           }
         }
@@ -125,8 +123,10 @@ class PopupManager {
       });
 
       if (response?.success && response.searchData) {
+        console.log('📋 Loading search results:', response.searchData.results?.length || 0, 'results');
         this.displaySearchResults(response.searchData);
       } else {
+        console.log('📋 No search results to display');
         this.hideSearchResults();
       }
     } catch (error) {
@@ -139,9 +139,12 @@ class PopupManager {
     const { results, query, searchType, timestamp } = searchData;
     
     if (!results || results.length === 0) {
+      console.log('📋 No results to display');
       this.hideSearchResults();
       return;
     }
+
+    console.log(`📋 Displaying ${results.length} search results`);
 
     // Show search query if available
     if (query) {
@@ -162,7 +165,7 @@ class PopupManager {
 
     // Add timestamp info for recent searches
     const timeSinceSearch = Date.now() - timestamp;
-    if (timeSinceSearch < 10000) { // Less than 10 seconds
+    if (timeSinceSearch < 30000) { // Less than 30 seconds
       const timeText = timeSinceSearch < 1000 ? 'just now' : `${Math.round(timeSinceSearch / 1000)}s ago`;
       this.elements.searchResultsTitle.textContent += ` (${timeText})`;
     }
@@ -176,7 +179,7 @@ class PopupManager {
         <div class="search-result-url">${this.truncateText(result.url, 50)}</div>
         <div class="search-result-meta">
           <span class="search-result-type">${this.getSearchTypeLabel(result.search_type)}</span>
-          <span class="search-result-score">${Math.round(result.similarity_score * 100)}%</span>
+          <span class="search-result-score">${Math.round((result.similarity_score || 0.5) * 100)}%</span>
         </div>
       </div>
     `).join('');
@@ -209,7 +212,7 @@ class PopupManager {
 
     // Highlight first result
     if (results.length > 0) {
-      results[0].style.backgroundColor = '#f0f9ff';
+      results[0].classList.add('keyboard-selected');
     }
 
     // Handle keyboard events
@@ -219,17 +222,17 @@ class PopupManager {
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
-          results[selectedIndex].style.backgroundColor = '';
+          results[selectedIndex].classList.remove('keyboard-selected');
           selectedIndex = (selectedIndex + 1) % results.length;
-          results[selectedIndex].style.backgroundColor = '#f0f9ff';
+          results[selectedIndex].classList.add('keyboard-selected');
           results[selectedIndex].scrollIntoView({ block: 'nearest' });
           break;
           
         case 'ArrowUp':
           e.preventDefault();
-          results[selectedIndex].style.backgroundColor = '';
+          results[selectedIndex].classList.remove('keyboard-selected');
           selectedIndex = selectedIndex === 0 ? results.length - 1 : selectedIndex - 1;
-          results[selectedIndex].style.backgroundColor = '#f0f9ff';
+          results[selectedIndex].classList.add('keyboard-selected');
           results[selectedIndex].scrollIntoView({ block: 'nearest' });
           break;
           
@@ -309,7 +312,8 @@ class PopupManager {
       context: 'Context',
       semantic: 'AI',
       trigram: 'Text',
-      manual: 'Search'
+      manual: 'Search',
+      text_fallback: 'Text'
     };
     
     return labels[searchType] || 'Match';

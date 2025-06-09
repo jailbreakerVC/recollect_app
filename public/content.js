@@ -43,7 +43,18 @@ class ContentScriptManager {
     console.log('📨 Content script received message from web page:', event.data);
     
     if (event.data.source === 'bookmark-manager-webapp') {
-      this.forwardToBackground(event.data);
+      // Handle search responses
+      if (event.data.action === 'searchResults') {
+        console.log('📤 Forwarding search response to background script');
+        chrome.runtime.sendMessage({
+          action: 'searchResponse',
+          data: event.data
+        }).catch(() => {
+          console.log('Background script not ready for search response');
+        });
+      } else {
+        this.forwardToBackground(event.data);
+      }
     }
   }
 
@@ -133,7 +144,7 @@ class ContentScriptManager {
         
         console.log('📨 Received search response from web app:', event.data);
         
-        // Forward the response to background script if needed
+        // Forward the response to background script
         chrome.runtime.sendMessage({
           action: 'searchResponse',
           data: event.data
