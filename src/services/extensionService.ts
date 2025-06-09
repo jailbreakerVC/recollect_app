@@ -34,6 +34,7 @@ export class ExtensionService {
   private isInitialized = false;
   private globalMessageHandler: ((event: MessageEvent) => void) | null = null;
   private availabilityCheckInterval: NodeJS.Timeout | null = null;
+  private lastAvailabilityCheck = 0;
 
   private constructor() {}
 
@@ -140,17 +141,33 @@ export class ExtensionService {
       Logger.info('ExtensionService', 'Extension ready event received', event.detail);
       (window as any).bookmarkExtensionAvailable = true;
     });
+
+    // Check if extension flag is already set
+    if ((window as any).bookmarkExtensionAvailable) {
+      Logger.info('ExtensionService', 'Extension flag already set');
+    }
   }
 
   private startAvailabilityMonitoring(): void {
+    // Initial check
     this.checkExtensionAvailability();
     
+    // Periodic checks every 5 seconds (less frequent to avoid spam)
     this.availabilityCheckInterval = setInterval(() => {
       this.checkExtensionAvailability();
-    }, APP_CONFIG.EXTENSION_CHECK_INTERVAL);
+    }, 5000);
   }
 
   private checkExtensionAvailability(): void {
+    const now = Date.now();
+    
+    // Throttle availability checks to avoid spam
+    if (now - this.lastAvailabilityCheck < 2000) {
+      return;
+    }
+    
+    this.lastAvailabilityCheck = now;
+    
     const wasAvailable = (window as any).bookmarkExtensionAvailable;
     const isAvailable = this.testExtensionPresence();
     
@@ -165,7 +182,17 @@ export class ExtensionService {
   }
 
   private testExtensionPresence(): boolean {
-    return !!(window as any).bookmarkExtensionAvailable;
+    // Check multiple indicators of extension presence
+    const hasFlag = !!(window as any).bookmarkExtensionAvailable;
+    const hasExtensionContext = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
+    
+    // If we're in an extension context, the extension is definitely available
+    if (hasExtensionContext) {
+      return true;
+    }
+    
+    // Otherwise, rely on the flag set by the content script
+    return hasFlag;
   }
 
   addMessageHandler(id: string, handler: (event: MessageEvent) => void): void {
@@ -178,12 +205,27 @@ export class ExtensionService {
 
   isExtensionAvailable(): boolean {
     const hasFlag = !!(window as any).bookmarkExtensionAvailable;
-    Logger.debug('ExtensionService', `Extension availability check: ${hasFlag}`);
-    return hasFlag;
+    const hasExtensionContext = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
+    
+    const available = hasFlag || hasExtensionContext;
+    
+    Logger.debug('ExtensionService', `Extension availability check: ${available}`, {
+      hasFlag,
+      hasExtensionContext,
+      windowFlag: (window as any).bookmarkExtensionAvailable
+    });
+    
+    return available;
   }
 
   async forceCheckAvailability(): Promise<boolean> {
     Logger.debug('ExtensionService', 'Force checking extension availability');
+    
+    // If we're in an extension context, return true immediately
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
+      (window as any).bookmarkExtensionAvailable = true;
+      return true;
+    }
     
     return new Promise((resolve) => {
       let responseReceived = false;
@@ -200,12 +242,14 @@ export class ExtensionService {
       
       window.addEventListener('message', testHandler);
       
+      // Send availability check message
       window.postMessage({
         source: EXTENSION_MESSAGES.SOURCES.WEBAPP,
         type: EXTENSION_MESSAGES.TYPES.AVAILABILITY_CHECK,
         timestamp: Date.now()
       }, window.location.origin);
       
+      // Timeout after 3 seconds
       setTimeout(() => {
         window.removeEventListener('message', testHandler);
         if (!responseReceived) {
@@ -213,7 +257,7 @@ export class ExtensionService {
           (window as any).bookmarkExtensionAvailable = false;
           resolve(false);
         }
-      }, 2000);
+      }, 3000);
     });
   }
 
@@ -364,7 +408,7 @@ export class ExtensionService {
     let intervalId: NodeJS.Timeout;
     
     const checkAvailability = async () => {
-      const available = await this.forceCheckAvailability();
+      const available = this.isExtensionAvailable();
       
       if (available !== lastAvailability) {
         Logger.info('ExtensionService', `Extension availability changed: ${available}`);
@@ -388,12 +432,14 @@ export class ExtensionService {
       this.initialize();
     }
 
+    // Initial check
     checkAvailability();
 
     window.addEventListener(EXTENSION_MESSAGES.TYPES.EXTENSION_READY, handleExtensionReady as EventListener);
     window.addEventListener('extensionAvailabilityChanged', handleAvailabilityChange as EventListener);
 
-    intervalId = setInterval(checkAvailability, APP_CONFIG.EXTENSION_CHECK_INTERVAL);
+    // Check every 5 seconds instead of 3 seconds to reduce spam
+    intervalId = setInterval(checkAvailability, 5000);
 
     return () => {
       Logger.info('ExtensionService', 'Cleaning up extension availability detection');
@@ -407,11 +453,14 @@ export class ExtensionService {
     try {
       Logger.info('ExtensionService', 'Testing extension connection');
       
-      if (!(window as any).bookmarkExtensionAvailable) {
-        Logger.debug('ExtensionService', 'Extension flag not set, trying force check');
-        const available = await this.forceCheckAvailability();
+      // First check if extension is available
+      const available = this.isExtensionAvailable();
+      
+      if (!available) {
+        Logger.debug('ExtensionService', 'Extension not available, trying force check');
+        const forceCheckResult = await this.forceCheckAvailability();
         
-        if (!available) {
+        if (!forceCheckResult) {
           return {
             success: false,
             message: 'Extension not available - no response to availability check'
@@ -419,6 +468,7 @@ export class ExtensionService {
         }
       }
       
+      // Try to get bookmarks to test the connection
       const bookmarks = await this.getBookmarks();
       
       return {
@@ -440,5 +490,12 @@ export const extensionService = ExtensionService.getInstance();
 
 // Auto-initialize when module loads
 if (typeof window !== 'undefined') {
-  extensionService.initialize();
+  // Wait for DOM to be ready before initializing
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      extensionService.initialize();
+    });
+  } else {
+    extensionService.initialize();
+  }
 }
