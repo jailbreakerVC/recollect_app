@@ -1,4 +1,4 @@
-// Chrome Extension Content Script - Enhanced for Context Search
+// Chrome Extension Content Script - Clean and Optimized
 class ContentScriptManager {
   constructor() {
     this.isInitialized = false;
@@ -10,7 +10,6 @@ class ContentScriptManager {
     this.init();
   }
 
-  // Initialize content script
   init() {
     this.setupMessageHandlers();
     this.injectExtensionFlag();
@@ -20,12 +19,10 @@ class ContentScriptManager {
     this.isInitialized = true;
   }
 
-  // Set up context validation to detect when extension context becomes invalid
   setupContextValidation() {
     // Test context validity periodically
     const testContext = () => {
       try {
-        // Try to access chrome.runtime - this will throw if context is invalid
         if (chrome.runtime && chrome.runtime.id) {
           this.contextValid = true;
         } else {
@@ -49,9 +46,7 @@ class ContentScriptManager {
     }
   }
 
-  // Handle when extension context becomes invalid
   handleContextInvalidation() {
-    // Stop all operations and clean up
     this.contextValid = false;
     this.messageQueue = [];
     this.responseListeners.clear();
@@ -66,10 +61,11 @@ class ContentScriptManager {
     }
 
     // Remove all event listeners to prevent further errors
-    window.removeEventListener('message', this.globalMessageHandler);
+    if (this.globalMessageHandler) {
+      window.removeEventListener('message', this.globalMessageHandler);
+    }
   }
 
-  // Check if extension context is valid before any chrome.runtime operations
   isContextValid() {
     try {
       return this.contextValid && chrome.runtime && chrome.runtime.id;
@@ -79,7 +75,6 @@ class ContentScriptManager {
     }
   }
 
-  // Set up message handlers
   setupMessageHandlers() {
     // Listen for messages from web page
     this.globalMessageHandler = this.handleWebPageMessage.bind(this);
@@ -93,7 +88,6 @@ class ContentScriptManager {
     }
   }
 
-  // Handle messages from web page
   handleWebPageMessage(event) {
     // Only accept messages from same origin
     if (event.origin !== window.location.origin) return;
@@ -102,22 +96,22 @@ class ContentScriptManager {
     if (!this.isBookmarkManagerMessage(event.data)) return;
 
     if (event.data.source === 'bookmark-manager-webapp') {
-      // Handle search responses
+      // Handle search responses - THIS IS THE KEY FIX
       if (event.data.action === 'searchResults') {
         this.forwardSearchResponseToBackground(event.data);
-      } else {
+      } else if (event.data.requestId && event.data.payload) {
         this.forwardToBackground(event.data);
       }
     }
   }
 
-  // Forward search response to background with context validation
   forwardSearchResponseToBackground(data) {
     if (!this.isContextValid()) {
-      return; // Context invalid, don't attempt to send message
+      return;
     }
 
     try {
+      // Forward the search response directly to background script
       chrome.runtime.sendMessage({
         action: 'searchResponse',
         data: data
@@ -129,7 +123,6 @@ class ContentScriptManager {
     }
   }
 
-  // Check if message is from bookmark manager
   isBookmarkManagerMessage(data) {
     if (!data || !data.source) return false;
     
@@ -144,7 +137,6 @@ class ContentScriptManager {
     return !ignoredSources.some(ignored => data.source.includes(ignored));
   }
 
-  // Forward message to background script with context validation
   forwardToBackground(data) {
     if (!this.isContextValid()) {
       // Context is invalid, send error response to web page
@@ -167,7 +159,6 @@ class ContentScriptManager {
         }
       });
     } catch (error) {
-      // Extension context invalidated during message sending
       this.handleContextInvalidation();
       this.sendResponseToWebPage(data.requestId, {
         success: false,
@@ -176,7 +167,6 @@ class ContentScriptManager {
     }
   }
 
-  // Send response back to web page
   sendResponseToWebPage(requestId, response) {
     try {
       window.postMessage({
@@ -189,7 +179,6 @@ class ContentScriptManager {
     }
   }
 
-  // Handle messages from extension
   handleExtensionMessage(request, sender, sendResponse) {
     if (!this.isContextValid()) {
       sendResponse({ success: false, error: 'Extension context invalidated' });
@@ -214,7 +203,6 @@ class ContentScriptManager {
     }
   }
 
-  // Handle forwarding messages to web app
   handleForwardToWebApp(request, sendResponse) {
     // Forward the message to the web app
     window.postMessage({
@@ -226,7 +214,6 @@ class ContentScriptManager {
     return false;
   }
 
-  // Handle setting up response listeners
   handleSetupResponseListener(request, sendResponse) {
     // Set up a listener for search responses from the web app
     const responseHandler = (event) => {
@@ -265,7 +252,6 @@ class ContentScriptManager {
     return false;
   }
 
-  // Handle web app notification
   handleNotifyWebApp(request, sendResponse) {
     const message = {
       source: 'bookmark-manager-extension',
@@ -283,7 +269,6 @@ class ContentScriptManager {
     return false;
   }
 
-  // Handle connection test
   handleConnectionTest(request, sendResponse) {
     // Test if web app can receive messages
     const testMessage = {
@@ -319,7 +304,6 @@ class ContentScriptManager {
     return true; // Keep message channel open
   }
 
-  // Set up sync completion listener
   setupSyncCompletionListener() {
     const syncCompleteListener = (event) => {
       if (event.data.source === 'bookmark-manager-webapp' && 
@@ -349,7 +333,6 @@ class ContentScriptManager {
     }, 30000);
   }
 
-  // Inject extension availability flag
   injectExtensionFlag() {
     const script = document.createElement('script');
     script.textContent = `
@@ -391,7 +374,6 @@ class ContentScriptManager {
     script.remove();
   }
 
-  // Connect to background script
   connectToBackground() {
     if (!this.isContextValid()) return;
 
@@ -405,7 +387,6 @@ class ContentScriptManager {
         }
       });
     } catch (error) {
-      // Could not connect to background script
       this.handleContextInvalidation();
     }
   }

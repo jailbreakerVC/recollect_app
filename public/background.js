@@ -1,9 +1,8 @@
-// Chrome Extension Background Script - Enhanced with Auto-Opening Popup
+// Chrome Extension Background Script - Clean and Optimized
 class BackgroundManager {
   constructor() {
     this.contextMenuEnabled = true;
     this.pageAnalysisEnabled = true;
-    this.lastPageContext = null;
     this.searchCache = new Map();
     this.pendingSearches = new Map();
     
@@ -23,11 +22,6 @@ class BackgroundManager {
       this.handleInstallation(details);
     });
 
-    // Handle extension startup
-    chrome.runtime.onStartup.addListener(() => {
-      // Extension started
-    });
-
     // Handle messages from content scripts and popup
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return this.handleMessage(request, sender, sendResponse);
@@ -35,9 +29,6 @@ class BackgroundManager {
 
     // Keep service worker alive
     chrome.runtime.onConnect.addListener((port) => {
-      // Content script connected
-      
-      // Handle port disconnect
       port.onDisconnect.addListener(() => {
         // Content script disconnected
       });
