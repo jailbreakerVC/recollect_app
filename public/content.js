@@ -11,14 +11,11 @@ class ContentScriptManager {
 
   // Initialize content script
   init() {
-    console.log('🔌 Content script initializing with context search support...');
-    
     this.setupMessageHandlers();
     this.injectExtensionFlag();
     this.connectToBackground();
     
     this.isInitialized = true;
-    console.log('✅ Content script initialized successfully');
   }
 
   // Set up message handlers
@@ -40,17 +37,14 @@ class ContentScriptManager {
     // Filter out non-bookmark manager messages
     if (!this.isBookmarkManagerMessage(event.data)) return;
     
-    console.log('📨 Content script received message from web page:', event.data);
-    
     if (event.data.source === 'bookmark-manager-webapp') {
       // Handle search responses
       if (event.data.action === 'searchResults') {
-        console.log('📤 Forwarding search response to background script');
         chrome.runtime.sendMessage({
           action: 'searchResponse',
           data: event.data
         }).catch(() => {
-          console.log('Background script not ready for search response');
+          // Background script not ready for search response
         });
       } else {
         this.forwardToBackground(event.data);
@@ -75,17 +69,13 @@ class ContentScriptManager {
 
   // Forward message to background script
   forwardToBackground(data) {
-    console.log('📤 Forwarding message to background script:', data.payload);
-    
     chrome.runtime.sendMessage(data.payload, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('❌ Background script error:', chrome.runtime.lastError);
         this.sendResponseToWebPage(data.requestId, {
           success: false,
           error: chrome.runtime.lastError.message
         });
       } else {
-        console.log('✅ Background script response:', response);
         this.sendResponseToWebPage(data.requestId, response);
       }
     });
@@ -102,8 +92,6 @@ class ContentScriptManager {
 
   // Handle messages from extension
   handleExtensionMessage(request, sender, sendResponse) {
-    console.log('📨 Content script received message from extension:', request);
-    
     switch (request.action) {
       case 'notifyWebApp':
         return this.handleNotifyWebApp(request, sendResponse);
@@ -121,8 +109,6 @@ class ContentScriptManager {
 
   // Handle forwarding messages to web app
   handleForwardToWebApp(request, sendResponse) {
-    console.log('📤 Forwarding message to web app:', request.payload);
-    
     // Forward the message to the web app
     window.postMessage({
       source: 'bookmark-manager-extension',
@@ -135,14 +121,10 @@ class ContentScriptManager {
 
   // Handle setting up response listeners
   handleSetupResponseListener(request, sendResponse) {
-    console.log('🔗 Setting up response listener for search results');
-    
     // Set up a listener for search responses from the web app
     const responseHandler = (event) => {
       if (event.data.source === 'bookmark-manager-webapp' && 
           (event.data.action === 'searchResults' || event.data.requestId)) {
-        
-        console.log('📨 Received search response from web app:', event.data);
         
         // Forward the response to background script
         chrome.runtime.sendMessage({
@@ -150,7 +132,6 @@ class ContentScriptManager {
           data: event.data
         }).catch(() => {
           // Background script might not be listening
-          console.log('Background script not listening for search response');
         });
       }
     };
@@ -179,8 +160,6 @@ class ContentScriptManager {
       data: request.data
     };
     
-    console.log('📤 Notifying web app:', message);
-    
     // Handle sync completion tracking
     if (request.event === 'syncRequested') {
       this.setupSyncCompletionListener();
@@ -193,8 +172,6 @@ class ContentScriptManager {
 
   // Handle connection test
   handleConnectionTest(request, sendResponse) {
-    console.log('🔍 Connection test requested');
-    
     // Test if web app can receive messages
     const testMessage = {
       source: 'bookmark-manager-extension',
@@ -212,7 +189,6 @@ class ContentScriptManager {
           event.data.type === 'connectionTestResponse') {
         responseReceived = true;
         window.removeEventListener('message', responseListener);
-        console.log('✅ Web app responded to connection test');
         sendResponse({ success: true, responsive: true });
       }
     };
@@ -223,7 +199,6 @@ class ContentScriptManager {
     setTimeout(() => {
       if (!responseReceived) {
         window.removeEventListener('message', responseListener);
-        console.log('⚠️ Web app did not respond to connection test');
         sendResponse({ success: true, responsive: false });
       }
     }, 2000);
@@ -236,7 +211,6 @@ class ContentScriptManager {
     const syncCompleteListener = (event) => {
       if (event.data.source === 'bookmark-manager-webapp' && 
           event.data.type === 'syncComplete') {
-        console.log('✅ Sync complete notification received');
         
         // Notify background script
         chrome.runtime.sendMessage({
@@ -258,12 +232,9 @@ class ContentScriptManager {
 
   // Inject extension availability flag
   injectExtensionFlag() {
-    console.log('🚀 Injecting extension availability flag with context search support');
-    
     const script = document.createElement('script');
     script.textContent = `
       (function() {
-        console.log('📱 Extension availability flag injected with context search');
         window.bookmarkExtensionAvailable = true;
         
         // Dispatch ready event
@@ -276,7 +247,6 @@ class ContentScriptManager {
         
         // Set up sync completion bridge
         window.notifyExtensionSyncComplete = function(data) {
-          console.log('📤 Notifying extension of sync completion:', data);
           window.postMessage({
             source: 'bookmark-manager-webapp',
             type: 'syncComplete',
@@ -288,7 +258,6 @@ class ContentScriptManager {
         window.addEventListener('message', function(event) {
           if (event.data.source === 'bookmark-manager-extension' && 
               event.data.event === 'connectionTest') {
-            console.log('🔍 Received connection test from extension');
             window.postMessage({
               source: 'bookmark-manager-webapp',
               type: 'connectionTestResponse',
@@ -296,15 +265,11 @@ class ContentScriptManager {
             }, window.location.origin);
           }
         });
-        
-        console.log('✅ Extension communication bridge ready with context search support');
       })();
     `;
     
     (document.head || document.documentElement).appendChild(script);
     script.remove();
-    
-    console.log('✅ Extension flag injected successfully');
   }
 
   // Connect to background script
@@ -312,12 +277,10 @@ class ContentScriptManager {
     try {
       this.port = chrome.runtime.connect({ name: 'content-script' });
       this.port.onDisconnect.addListener(() => {
-        console.log('🔌 Content script disconnected from background');
         this.port = null;
       });
-      console.log('🔌 Connected to background script');
     } catch (error) {
-      console.log('⚠️ Could not connect to background script:', error.message);
+      // Could not connect to background script
     }
   }
 }

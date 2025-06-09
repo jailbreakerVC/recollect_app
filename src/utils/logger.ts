@@ -20,13 +20,17 @@ export class Logger {
   }
 
   static debug(component: string, message: string, data?: any): void {
+    // Only log debug messages in development
     if (this.isDevelopment) {
       console.debug(this.formatMessage('debug', component, message), data);
     }
   }
 
   static info(component: string, message: string, data?: any): void {
-    console.info(this.formatMessage('info', component, message), data);
+    // Only log info messages in development
+    if (this.isDevelopment) {
+      console.info(this.formatMessage('info', component, message), data);
+    }
   }
 
   static warn(component: string, message: string, data?: any): void {

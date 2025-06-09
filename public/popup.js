@@ -12,16 +12,12 @@ class PopupManager {
   }
 
   init() {
-    console.log('🚀 Popup initializing with auto-opening support...');
-    
     this.cacheElements();
     this.setupEventListeners();
     this.loadStoredData();
     this.startConnectionMonitoring();
     this.loadSearchResults();
     this.handleAutoOpen();
-    
-    console.log('✅ Popup initialized successfully');
   }
 
   handleAutoOpen() {
@@ -34,8 +30,6 @@ class PopupManager {
         
         // If search was recent (within 10 seconds), it was likely auto-opened
         if (timeSinceSearch < 10000) {
-          console.log('🎯 Popup auto-opened with fresh search results');
-          
           // Clear the badge since user is now viewing results
           chrome.action.setBadgeText({ text: '' });
           
@@ -91,15 +85,12 @@ class PopupManager {
     // Listen for storage changes (for real-time updates)
     chrome.storage.onChanged.addListener((changes, namespace) => {
       if (namespace === 'local' && changes.lastSearchResults) {
-        console.log('🔄 Search results updated, refreshing display');
         this.loadSearchResults();
       }
     });
   }
 
   async testSearchFunction() {
-    console.log('🧪 Testing search function...');
-    
     this.elements.testSearchBtn.disabled = true;
     this.elements.testSearchBtn.innerHTML = '🧪 Testing...';
     
@@ -110,14 +101,11 @@ class PopupManager {
 
       if (response?.success) {
         this.showTemporaryMessage(`✅ Test passed: ${response.message}`, 'success');
-        console.log('✅ Search test successful:', response);
       } else {
         this.showTemporaryMessage(`❌ Test failed: ${response.error}`, 'error');
-        console.error('❌ Search test failed:', response);
       }
     } catch (error) {
       this.showTemporaryMessage(`❌ Test error: ${error.message}`, 'error');
-      console.error('❌ Search test error:', error);
     } finally {
       this.elements.testSearchBtn.disabled = false;
       this.elements.testSearchBtn.innerHTML = '🧪 Test Search Function';
@@ -125,8 +113,6 @@ class PopupManager {
   }
 
   handleBackgroundMessage(message, sender, sendResponse) {
-    console.log('📨 Popup received message:', message);
-    
     switch (message.action) {
       case 'syncStarted':
         this.updateSyncButton('🔄 Syncing...');
@@ -152,14 +138,11 @@ class PopupManager {
       });
 
       if (response?.success && response.searchData) {
-        console.log('📋 Loading search results:', response.searchData.results?.length || 0, 'results');
         this.displaySearchResults(response.searchData);
       } else {
-        console.log('📋 No search results to display');
         this.hideSearchResults();
       }
     } catch (error) {
-      console.log('Could not load search results:', error.message);
       this.hideSearchResults();
     }
   }
@@ -168,12 +151,9 @@ class PopupManager {
     const { results, query, searchType, timestamp } = searchData;
     
     if (!results || results.length === 0) {
-      console.log('📋 No results to display');
       this.hideSearchResults();
       return;
     }
-
-    console.log(`📋 Displaying ${results.length} search results`);
 
     // Show search query if available
     if (query) {
@@ -220,8 +200,6 @@ class PopupManager {
     this.elements.searchResultsContent.querySelectorAll('.search-result-title').forEach((link, index) => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
-        
-        console.log(`📖 Opening bookmark: ${link.dataset.url}`);
         
         // Open in new tab
         chrome.tabs.create({ url: link.dataset.url });
@@ -293,7 +271,7 @@ class PopupManager {
       this.showTemporaryMessage('Search results cleared', 'success');
       
     } catch (error) {
-      console.log('Could not clear search results:', error.message);
+      // Could not clear search results
     }
   }
 
@@ -377,10 +355,8 @@ class PopupManager {
         action: 'toggleContextMenu',
         enabled: enabled
       });
-      
-      console.log('🔍 Context menu search:', enabled ? 'enabled' : 'disabled');
     } catch (error) {
-      console.log('Could not toggle context menu:', error.message);
+      // Could not toggle context menu
     }
   }
 
@@ -396,16 +372,12 @@ class PopupManager {
         action: 'togglePageAnalysis',
         enabled: enabled
       });
-      
-      console.log('🤖 Page analysis:', enabled ? 'enabled' : 'disabled');
     } catch (error) {
-      console.log('Could not toggle page analysis:', error.message);
+      // Could not toggle page analysis
     }
   }
 
   updateStatus(connected, message) {
-    console.log('📊 Updating status:', { connected, message });
-    
     this.isConnected = connected;
     this.elements.status.className = `status ${connected ? 'connected' : 'disconnected'}`;
     this.elements.status.innerHTML = message;
@@ -458,8 +430,6 @@ class PopupManager {
   }
 
   async checkConnection() {
-    console.log('🔍 Checking web app connection...');
-    
     try {
       const webAppUrls = [
         'http://localhost:*/*',
@@ -469,7 +439,6 @@ class PopupManager {
       ];
       
       const tabs = await chrome.tabs.query({ url: webAppUrls });
-      console.log('📋 Found tabs:', tabs?.length || 0);
       
       if (tabs && tabs.length > 0) {
         for (const tab of tabs) {
@@ -486,14 +455,11 @@ class PopupManager {
         this.updateStatus(false, '⚠️ Web App Not Open');
       }
     } catch (error) {
-      console.error('❌ Connection check error:', error);
       this.updateStatus(false, '❌ Connection Error');
     }
   }
 
   async testTabResponsiveness(tab) {
-    console.log('🧪 Testing tab responsiveness:', tab.id);
-    
     try {
       const response = await chrome.tabs.sendMessage(tab.id, {
         action: 'testConnection'
@@ -501,8 +467,6 @@ class PopupManager {
       
       return response?.success && response?.responsive;
     } catch (error) {
-      console.log('⚠️ Tab not responsive, trying content script injection:', error.message);
-      
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -517,23 +481,18 @@ class PopupManager {
         
         return response?.success && response?.responsive;
       } catch (injectionError) {
-        console.log('❌ Content script injection failed:', injectionError.message);
         return false;
       }
     }
   }
 
   getBookmarkCount() {
-    console.log('📊 Getting bookmark count...');
-    
     chrome.bookmarks.getTree((bookmarkTree) => {
       if (chrome.runtime.lastError) {
-        console.error('❌ Failed to get bookmarks:', chrome.runtime.lastError);
         return;
       }
       
       const count = this.countBookmarks(bookmarkTree);
-      console.log('📚 Bookmark count:', count);
       this.updateBookmarkCount(count);
     });
   }
@@ -558,8 +517,6 @@ class PopupManager {
   }
 
   openWebApp() {
-    console.log('🌐 Opening web app...');
-    
     const urls = [
       'http://localhost:5173',
       'http://localhost:3000'
@@ -567,9 +524,8 @@ class PopupManager {
     
     chrome.tabs.create({ url: urls[0] }, (tab) => {
       if (chrome.runtime.lastError) {
-        console.error('❌ Failed to open tab:', chrome.runtime.lastError);
+        // Failed to open tab
       } else {
-        console.log('✅ Web app opened in new tab:', tab.id);
         window.close();
       }
     });
@@ -577,22 +533,17 @@ class PopupManager {
 
   async syncBookmarks() {
     if (this.isSyncing) {
-      console.log('⏭️ Sync already in progress');
       return;
     }
 
-    console.log('🔄 Starting sync process...');
-    
     this.isSyncing = true;
     this.elements.syncBookmarksBtn.disabled = true;
     this.updateSyncButton('🔄 Checking...');
 
     try {
       const syncCheck = await this.checkSyncNeeded();
-      console.log('🔍 Sync check result:', syncCheck);
 
       if (!syncCheck.needsSync) {
-        console.log('✅ No sync needed');
         this.updateStatus(true, '✅ Already Up to Date');
         this.updateSyncButton('✅ Up to Date');
         
@@ -603,7 +554,6 @@ class PopupManager {
       await this.performSync(syncCheck);
       
     } catch (error) {
-      console.error('❌ Sync error:', error);
       this.updateStatus(false, '❌ Sync Failed');
       this.resetSyncButton();
     }
@@ -670,7 +620,6 @@ class PopupManager {
     let syncCompleted = false;
     const responseTimeout = setTimeout(() => {
       if (!syncCompleted) {
-        console.log('⏰ Sync timeout');
         this.updateStatus(true, '⚠️ Sync may be incomplete');
         this.resetSyncButton();
       }
@@ -696,18 +645,14 @@ class PopupManager {
           data: { count, reason, timestamp: Date.now() }
         });
         
-        console.log('📨 Sync request sent to tab:', tab.id);
         break;
       } catch (error) {
-        console.log('⚠️ Tab not ready:', error.message);
         continue;
       }
     }
   }
 
   handleSyncComplete(data) {
-    console.log('✅ Sync completed:', data);
-    
     this.updateLastSync();
     this.updateStatus(true, `✅ Synced ${this.bookmarkCount} bookmarks`);
     this.updateSyncButton('✅ Sync Complete');
