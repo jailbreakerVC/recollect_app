@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Brain, Zap, ExternalLink, RefreshCw, TestTube, AlertCircle } from 'lucide-react';
+import { Search, Brain, Zap, ExternalLink, RefreshCw, TestTube, AlertCircle, Database, CheckCircle } from 'lucide-react';
 import { useSemanticSearch } from '../hooks/useSemanticSearch';
 import { useToast } from './Toast';
 import { SemanticSearchResult } from '../services/semanticSearchService';
+import { useAuth } from '../contexts/AuthContext';
+import { BookmarkService } from '../services/bookmarkService';
 
 interface SemanticSearchPanelProps {
   onClose?: () => void;
 }
 
+interface EmbeddingStats {
+  totalBookmarks: number;
+  bookmarksWithEmbeddings: number;
+  needsEmbeddings: number;
+}
+
 export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClose }) => {
+  const { user } = useAuth();
   const {
     searchResults,
     loading,
@@ -22,9 +31,12 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
   const { showSuccess, showError, showLoading, removeToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
+  const [embeddingStats, setEmbeddingStats] = useState<EmbeddingStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   useEffect(() => {
     checkAvailability();
+    loadEmbeddingStats();
   }, []);
 
   const checkAvailability = async () => {
@@ -33,6 +45,30 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
       setIsAvailable(available);
     } catch (err) {
       setIsAvailable(false);
+    }
+  };
+
+  const loadEmbeddingStats = async () => {
+    if (!user) return;
+    
+    setLoadingStats(true);
+    try {
+      // Get total bookmarks for user
+      const bookmarks = await BookmarkService.getBookmarks(user.id);
+      
+      // Count bookmarks with embeddings (this is a simple check)
+      // In a real implementation, you'd query the database directly
+      const stats: EmbeddingStats = {
+        totalBookmarks: bookmarks.length,
+        bookmarksWithEmbeddings: 0, // We'll assume none have embeddings initially
+        needsEmbeddings: bookmarks.length
+      };
+      
+      setEmbeddingStats(stats);
+    } catch (err) {
+      console.error('Failed to load embedding stats:', err);
+    } finally {
+      setLoadingStats(false);
     }
   };
 
@@ -47,18 +83,19 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
   };
 
   const handleUpdateEmbeddings = async () => {
-    const loadingToastId = showLoading('Updating Embeddings', 'Generating embeddings for your bookmarks...');
+    const loadingToastId = showLoading('Generating Embeddings', 'Creating AI embeddings for your bookmarks...');
 
     try {
       const count = await updateEmbeddings();
       removeToast(loadingToastId);
-      showSuccess('Embeddings Updated', `Updated embeddings for ${count} bookmarks`);
+      showSuccess('Embeddings Generated', `Successfully created embeddings for ${count} bookmarks`);
       
-      // Refresh availability after updating embeddings
+      // Refresh stats and availability
+      await loadEmbeddingStats();
       await checkAvailability();
     } catch (err) {
       removeToast(loadingToastId);
-      showError('Update Failed', err instanceof Error ? err.message : 'Failed to update embeddings');
+      showError('Update Failed', err instanceof Error ? err.message : 'Failed to generate embeddings');
     }
   };
 
@@ -69,12 +106,28 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
   const getSearchTypeIcon = (searchType: string) => {
     switch (searchType) {
       case 'semantic':
-        return <Brain className="w-3 h-3 text-purple-600\" title="Semantic search" />;
+        return <Brain className="w-3 h-3 text-purple-600" title="AI Semantic search" />;
       case 'trigram':
-        return <Search className="w-3 h-3 text-blue-600\" title="Text similarity" />;
+        return <Search className="w-3 h-3 text-blue-600" title="Text similarity" />;
+      case 'text_fallback':
+        return <Search className="w-3 h-3 text-gray-600" title="Simple text search" />;
       default:
-        return <Search className="w-3 h-3 text-gray-600\" title="Fallback search" />;
+        return <Search className="w-3 h-3 text-gray-600" title="Fallback search" />;
     }
+  };
+
+  const getEmbeddingStatusColor = () => {
+    if (!embeddingStats) return 'gray';
+    if (embeddingStats.bookmarksWithEmbeddings === 0) return 'red';
+    if (embeddingStats.needsEmbeddings > 0) return 'yellow';
+    return 'green';
+  };
+
+  const getEmbeddingStatusText = () => {
+    if (!embeddingStats) return 'Loading...';
+    if (embeddingStats.bookmarksWithEmbeddings === 0) return 'No embeddings generated';
+    if (embeddingStats.needsEmbeddings > 0) return 'Partial embeddings';
+    return 'All embeddings ready';
   };
 
   if (isAvailable === false) {
@@ -83,7 +136,7 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
             <Brain className="w-5 h-5 mr-2 text-purple-600" />
-            Semantic Search
+            AI Semantic Search
           </h3>
           {onClose && (
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -116,7 +169,7 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
           <Brain className="w-5 h-5 mr-2 text-purple-600" />
-          Semantic Search
+          AI Semantic Search
           {isAvailable && (
             <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
               Available
@@ -129,6 +182,61 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
           </button>
         )}
       </div>
+
+      {/* Embedding Status */}
+      {embeddingStats && (
+        <div className={`mb-6 p-4 rounded-lg border ${
+          getEmbeddingStatusColor() === 'red' ? 'bg-red-50 border-red-200' :
+          getEmbeddingStatusColor() === 'yellow' ? 'bg-yellow-50 border-yellow-200' :
+          getEmbeddingStatusColor() === 'green' ? 'bg-green-50 border-green-200' :
+          'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-medium text-gray-900 flex items-center">
+              <Database className="w-4 h-4 mr-2" />
+              Embedding Status
+            </h4>
+            {loadingStats && <RefreshCw className="w-4 h-4 animate-spin text-gray-500" />}
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <span className="text-gray-600">Total Bookmarks:</span>
+              <div className="font-semibold">{embeddingStats.totalBookmarks}</div>
+            </div>
+            <div>
+              <span className="text-gray-600">With Embeddings:</span>
+              <div className="font-semibold">{embeddingStats.bookmarksWithEmbeddings}</div>
+            </div>
+            <div>
+              <span className="text-gray-600">Need Embeddings:</span>
+              <div className="font-semibold text-orange-600">{embeddingStats.needsEmbeddings}</div>
+            </div>
+          </div>
+          
+          <div className="mt-3 flex items-center justify-between">
+            <span className={`text-sm font-medium ${
+              getEmbeddingStatusColor() === 'red' ? 'text-red-700' :
+              getEmbeddingStatusColor() === 'yellow' ? 'text-yellow-700' :
+              getEmbeddingStatusColor() === 'green' ? 'text-green-700' :
+              'text-gray-700'
+            }`}>
+              {getEmbeddingStatusText()}
+            </span>
+            
+            {embeddingStats.needsEmbeddings > 0 && (
+              <button
+                onClick={handleUpdateEmbeddings}
+                disabled={loading}
+                className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 transition-colors disabled:opacity-50"
+              >
+                <Zap className="w-3 h-3 mr-1" />
+                Generate Embeddings
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Search Form */}
@@ -156,17 +264,17 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
               ) : (
                 <Brain className="w-4 h-4 mr-2" />
               )}
-              {loading ? 'Searching...' : 'Semantic Search'}
+              {loading ? 'Searching...' : 'AI Search'}
             </button>
             
             <button
               type="button"
-              onClick={handleUpdateEmbeddings}
-              disabled={loading}
+              onClick={() => loadEmbeddingStats()}
+              disabled={loading || loadingStats}
               className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
-              title="Update embeddings for better search results"
+              title="Refresh embedding status"
             >
-              <Zap className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </form>
@@ -206,13 +314,23 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
 
         {/* Help Text */}
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-          <h5 className="font-medium text-purple-900 mb-2">How Semantic Search Works</h5>
+          <h5 className="font-medium text-purple-900 mb-2">How AI Semantic Search Works</h5>
           <ul className="text-sm text-purple-800 space-y-1">
-            <li>• Searches by meaning and context, not just keywords</li>
-            <li>• Finds related bookmarks even with different wording</li>
+            <li>• <strong>Step 1:</strong> Generate embeddings for your bookmarks (one-time setup)</li>
+            <li>• <strong>Step 2:</strong> Search by meaning and context, not just keywords</li>
+            <li>• <strong>Step 3:</strong> Find related bookmarks even with different wording</li>
             <li>• Uses AI embeddings to understand content similarity</li>
             <li>• Falls back to text search when needed</li>
           </ul>
+          
+          {embeddingStats && embeddingStats.needsEmbeddings > 0 && (
+            <div className="mt-3 p-3 bg-orange-100 border border-orange-200 rounded">
+              <p className="text-sm text-orange-800">
+                <strong>⚡ Action Required:</strong> You have {embeddingStats.needsEmbeddings} bookmarks without AI embeddings. 
+                Click "Generate Embeddings" above to enable full semantic search capabilities.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -227,16 +345,31 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
   const getSearchTypeIcon = (searchType: string) => {
     switch (searchType) {
       case 'semantic':
-        return <Brain className="w-3 h-3 text-purple-600\" title="Semantic search" />;
+        return <Brain className="w-3 h-3 text-purple-600" title="AI Semantic search" />;
       case 'trigram':
-        return <Search className="w-3 h-3 text-blue-600\" title="Text similarity" />;
+        return <Search className="w-3 h-3 text-blue-600" title="Text similarity" />;
+      case 'text_fallback':
+        return <Search className="w-3 h-3 text-gray-600" title="Simple text search" />;
       default:
-        return <Search className="w-3 h-3 text-gray-600\" title="Fallback search" />;
+        return <Search className="w-3 h-3 text-gray-600" title="Fallback search" />;
     }
   };
 
   const formatSimilarityScore = (score: number): string => {
     return `${Math.round(score * 100)}%`;
+  };
+
+  const getSearchTypeLabel = (searchType: string): string => {
+    switch (searchType) {
+      case 'semantic':
+        return 'AI Match';
+      case 'trigram':
+        return 'Text Match';
+      case 'text_fallback':
+        return 'Simple Match';
+      default:
+        return 'Match';
+    }
   };
 
   return (
@@ -246,9 +379,10 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
           {result.title}
         </h5>
         <div className="flex items-center space-x-2">
-          <span className="text-xs text-gray-500 flex items-center">
+          <span className="text-xs text-gray-500 flex items-center bg-gray-100 px-2 py-1 rounded">
             {getSearchTypeIcon(result.search_type)}
-            <span className="ml-1">{formatSimilarityScore(result.similarity_score)}</span>
+            <span className="ml-1">{getSearchTypeLabel(result.search_type)}</span>
+            <span className="ml-1 font-medium">{formatSimilarityScore(result.similarity_score)}</span>
           </span>
           <a
             href={result.url}

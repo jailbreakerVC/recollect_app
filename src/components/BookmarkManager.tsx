@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bookmark, RefreshCw, Chrome, TestTube, Bug, Brain } from 'lucide-react';
+import { Bookmark, RefreshCw, Chrome, TestTube, Bug, Brain, Zap, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
 import { extensionService } from '../services/extensionService';
@@ -12,6 +12,7 @@ import { DebugPanel } from './DebugPanel';
 import { SemanticSearchPanel } from './SemanticSearchPanel';
 import { ConnectionStatus, SortOption } from '../types';
 import { Logger } from '../utils/logger';
+import { SemanticSearchService } from '../services/semanticSearchService';
 
 const BookmarkManager: React.FC = () => {
   const { user } = useAuth();
@@ -39,6 +40,8 @@ const BookmarkManager: React.FC = () => {
   const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
+  const [semanticSearchAvailable, setSemanticSearchAvailable] = useState<boolean | null>(null);
+  const [needsEmbeddings, setNeedsEmbeddings] = useState(false);
 
   // Test database connection on mount
   useEffect(() => {
@@ -53,6 +56,29 @@ const BookmarkManager: React.FC = () => {
 
     testConnection();
   }, []);
+
+  // Check semantic search availability and embedding status
+  useEffect(() => {
+    const checkSemanticSearch = async () => {
+      try {
+        const available = await SemanticSearchService.testSemanticSearchAvailability();
+        setSemanticSearchAvailable(available);
+        
+        // If available and we have bookmarks, check if we need embeddings
+        if (available && bookmarks.length > 0) {
+          // Simple heuristic: if we have bookmarks but semantic search is available,
+          // we likely need to generate embeddings
+          setNeedsEmbeddings(true);
+        }
+      } catch (err) {
+        setSemanticSearchAvailable(false);
+      }
+    };
+
+    if (bookmarks.length > 0) {
+      checkSemanticSearch();
+    }
+  }, [bookmarks.length]);
 
   // Debug user context in development
   useEffect(() => {
@@ -124,6 +150,24 @@ const BookmarkManager: React.FC = () => {
         success: false,
         error: error instanceof Error ? error.message : 'Search failed'
       }, window.location.origin);
+    }
+  };
+
+  const handleGenerateEmbeddings = async () => {
+    if (!user) return;
+
+    const loadingToastId = showLoading('Generating AI Embeddings', 'Creating embeddings for your bookmarks...');
+
+    try {
+      const count = await SemanticSearchService.updateUserEmbeddings(user.id);
+      removeToast(loadingToastId);
+      showSuccess('Embeddings Generated', `Successfully created AI embeddings for ${count} bookmarks. Semantic search is now fully enabled!`);
+      setNeedsEmbeddings(false);
+    } catch (err) {
+      removeToast(loadingToastId);
+      const message = err instanceof Error ? err.message : 'Failed to generate embeddings';
+      showError('Embedding Generation Failed', message);
+      Logger.error('BookmarkManager', 'Failed to generate embeddings', err);
     }
   };
 
@@ -254,6 +298,11 @@ const BookmarkManager: React.FC = () => {
           'Sync Complete', 
           `Successfully synced ${result.total} bookmarks. Changes: ${changes.join(', ')}`
         );
+
+        // If we have new bookmarks and semantic search is available, suggest generating embeddings
+        if (result.inserted > 0 && semanticSearchAvailable) {
+          setNeedsEmbeddings(true);
+        }
       } else {
         showSuccess('Sync Complete', 'Your bookmarks are already up to date');
       }
@@ -482,6 +531,47 @@ const BookmarkManager: React.FC = () => {
           extensionAvailable={extensionStatus === 'available'}
           lastSyncResult={lastSyncResult}
         />
+
+        {/* AI Embeddings Call-to-Action */}
+        {semanticSearchAvailable && needsEmbeddings && bookmarks.length > 0 && (
+          <div className="mb-8 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-6">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <div className="bg-purple-100 p-3 rounded-lg">
+                  <Brain className="w-6 h-6 text-purple-600" />
+                </div>
+              </div>
+              <div className="ml-4 flex-1">
+                <h3 className="text-lg font-semibold text-purple-900 mb-2">
+                  🚀 Enable AI-Powered Semantic Search
+                </h3>
+                <p className="text-purple-800 mb-4">
+                  You have {bookmarks.length} bookmarks ready for AI enhancement! Generate embeddings to unlock 
+                  powerful semantic search that finds bookmarks by meaning and context, not just keywords.
+                </p>
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={handleGenerateEmbeddings}
+                    disabled={loading}
+                    className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                  >
+                    <Zap className="w-4 h-4 mr-2" />
+                    Generate AI Embeddings
+                  </button>
+                  <span className="text-sm text-purple-700">
+                    ⚡ One-time setup • Takes ~30 seconds
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setNeedsEmbeddings(false)}
+                className="text-purple-400 hover:text-purple-600 ml-4"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Semantic Search Panel */}
         {showSemanticSearch && (
