@@ -53,20 +53,17 @@ export const SemanticSearchPanel: React.FC<SemanticSearchPanelProps> = ({ onClos
     
     setLoadingStats(true);
     try {
-      // Get total bookmarks for user
-      const bookmarks = await BookmarkService.getBookmarks(user.id);
-      
-      // Count bookmarks with embeddings (this is a simple check)
-      // In a real implementation, you'd query the database directly
-      const stats: EmbeddingStats = {
-        totalBookmarks: bookmarks.length,
-        bookmarksWithEmbeddings: 0, // We'll assume none have embeddings initially
-        needsEmbeddings: bookmarks.length
-      };
-      
+      const stats = await BookmarkService.getEmbeddingStats(user.id);
       setEmbeddingStats(stats);
     } catch (err) {
       console.error('Failed to load embedding stats:', err);
+      // Fallback to basic stats
+      const bookmarks = await BookmarkService.getBookmarks(user.id);
+      setEmbeddingStats({
+        totalBookmarks: bookmarks.length,
+        bookmarksWithEmbeddings: 0,
+        needsEmbeddings: bookmarks.length
+      });
     } finally {
       setLoadingStats(false);
     }

@@ -50,6 +50,7 @@ export class BookmarkService {
     Logger.debug('BookmarkService', `Setting user context for: ${userId}`);
     
     try {
+      // Try the new function name first
       const { error } = await supabase.rpc('set_app_user_context', {
         user_id: userId
       });
@@ -66,6 +67,7 @@ export class BookmarkService {
 
   static async debugUserContext(): Promise<any> {
     try {
+      // Try the new function name first
       const { data, error } = await supabase.rpc('debug_user_context');
       
       if (error) {
@@ -397,6 +399,51 @@ export class BookmarkService {
     } catch (err) {
       Logger.error('BookmarkService', 'Error getting bookmarks count', err);
       return 0;
+    }
+  }
+
+  // Add method to get embedding statistics
+  static async getEmbeddingStats(userId: string): Promise<{
+    totalBookmarks: number;
+    bookmarksWithEmbeddings: number;
+    needsEmbeddings: number;
+  }> {
+    if (!validateUserId(userId)) {
+      throw new Error('Invalid user ID');
+    }
+
+    try {
+      // Get all bookmarks for the user
+      const { data: allBookmarks, error: allError } = await supabase
+        .from('bookmarks')
+        .select('id, title_embedding')
+        .eq('user_id', userId);
+
+      if (allError) {
+        throw new Error(`Failed to fetch bookmarks: ${allError.message}`);
+      }
+
+      const totalBookmarks = allBookmarks?.length || 0;
+      
+      // Count bookmarks with embeddings (non-null title_embedding)
+      const bookmarksWithEmbeddings = allBookmarks?.filter(b => b.title_embedding !== null).length || 0;
+      
+      const needsEmbeddings = totalBookmarks - bookmarksWithEmbeddings;
+
+      Logger.info('BookmarkService', `Embedding stats for user ${userId}:`, {
+        totalBookmarks,
+        bookmarksWithEmbeddings,
+        needsEmbeddings
+      });
+
+      return {
+        totalBookmarks,
+        bookmarksWithEmbeddings,
+        needsEmbeddings
+      };
+    } catch (err) {
+      Logger.error('BookmarkService', 'Failed to get embedding stats', err);
+      throw err;
     }
   }
 }
