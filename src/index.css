@@ -1,3 +1,107 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    html {
+        @apply scroll-smooth;
+    }
+
+    body {
+        @apply font-sans text-gray-800 antialiased;
+        font-optical-sizing: auto;
+        background: linear-gradient(
+            135deg,
+            #1a1a2e 0%,
+            #16213e 50%,
+            #0f3460 100%
+        );
+        background-attachment: fixed;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-optical-sizing: auto;
+        font-weight: 600;
+    }
+}
+
+@layer components {
+    .glass {
+        @apply bg-gray-900/30 backdrop-blur-lg border border-gray-700/30 shadow-glass;
+    }
+
+    .glass-card {
+        @apply glass rounded-xl p-6 transition-all duration-300;
+    }
+
+    .glass-button {
+        @apply glass px-6 py-3 rounded-full font-medium transition-all duration-300
+    hover:bg-white/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+
+    .glass-input {
+        @apply glass px-4 py-2 rounded-lg w-full placeholder:text-gray-400/70
+    focus:outline-none focus:ring-2 focus:ring-accent-400 focus:ring-opacity-50;
+    }
+
+    .section {
+        @apply py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto;
+    }
+
+    .heading-1 {
+        @apply text-4xl sm:text-5xl md:text-6xl font-semibold text-white leading-tight;
+    }
+
+    .heading-2 {
+        @apply text-3xl sm:text-4xl font-semibold text-white leading-tight;
+    }
+
+    .heading-3 {
+        @apply text-2xl sm:text-3xl font-semibold text-white leading-tight;
+    }
+
+    .timeline-dot {
+        @apply w-4 h-4 rounded-full bg-accent-500 border-4 border-gray-900;
+    }
+
+    .timeline-line {
+        @apply absolute left-[7px] top-4 bottom-0 w-0.5 bg-accent-500/30;
+    }
+}
+
+/* Animations */
+@keyframes float {
+    0% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-20px);
+    }
+    100% {
+        transform: translateY(0px);
+    }
+}
+
+.animate-float {
+    animation: float 6s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
