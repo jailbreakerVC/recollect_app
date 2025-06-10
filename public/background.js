@@ -11,8 +11,8 @@ class BackgroundManager {
     // Page analysis settings
     this.pageAnalysisConfig = {
       enabled: true,
-      minSimilarityScore: 0.7, // Only show results with 70%+ similarity
-      minResults: 2, // Need at least 2 good matches
+      minSimilarityScore: 0.3, // Only show results with 70%+ similarity
+      minResults: 1, // Need at least 2 good matches
       maxResults: 5, // Don't overwhelm with too many
       cooldownPeriod: 300000, // 5 minutes between analyses for same domain
       excludeDomains: [
