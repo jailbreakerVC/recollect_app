@@ -1,11 +1,6 @@
-import Header from "./Header";
-import Hero from "./Hero";
-import Features from "./Features";
-import Demo from "./Demo";
-import CTA from "./CTA";
-import Footer from "./Footer";
-import { useAuth } from "../contexts/AuthContext";
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from 'react';
+import { ArrowRight, BookmarkPlus, Search, Database, Chrome } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 declare global {
   interface Window {
@@ -22,73 +17,14 @@ declare global {
   }
 }
 
-function Landing() {
+const Landing: React.FC = () => {
   const { login, loading, error } = useAuth();
   const googleButtonRef = useRef<HTMLDivElement>(null);
-
-  const GoogleSignInButton = () => {
-    return (
-      <div className="mb-16">
-        <div className="flex flex-col items-center space-y-6">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-3 rounded-lg max-w-md">
-              <div className="flex items-center">
-                <svg
-                  className="w-5 h-5 mr-2\"
-                  fill="currentColor\"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z\"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                {error}
-              </div>
-            </div>
-          )}
-
-          <div className="relative">
-            <div className="absolute inset-0 bg-white rounded-lg shadow-2xl blur-sm transform scale-105 opacity-50"></div>
-            <div className="relative bg-white p-8 rounded-lg shadow-xl border border-gray-100">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Welcome Back
-                </h3>
-                <p className="text-gray-600">
-                  Sign in to continue to your account
-                </p>
-              </div>
-
-              {loading ? (
-                <div className="flex items-center justify-center p-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span className="ml-3 text-gray-600">Signing you in...</span>
-                </div>
-              ) : (
-                <div
-                  ref={googleButtonRef}
-                  className="flex justify-center"
-                ></div>
-              )}
-
-              <p className="text-sm text-gray-500 mt-6 text-center">
-                By signing in, you agree to our Terms of Service and Privacy
-                Policy
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   useEffect(() => {
     if (window.google?.accounts?.id && googleButtonRef.current) {
       window.google.accounts.id.initialize({
-        client_id:
-          import.meta.env.VITE_GOOGLE_CLIENT_ID || "YOUR_GOOGLE_CLIENT_ID",
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || "YOUR_GOOGLE_CLIENT_ID",
         callback: (response: any) => {
           login(response.credential);
         },
@@ -97,7 +33,7 @@ function Landing() {
       });
 
       window.google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: "outline",
+        theme: "filled_blue",
         size: "large",
         type: "standard",
         text: "signin_with",
@@ -107,23 +43,128 @@ function Landing() {
       });
     }
   }, [login]);
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main>
-        <Hero />
-        <GoogleSignInButton></GoogleSignInButton>
-        <Features />
-        <Demo />
-        <CTA />
+    <div className="min-h-screen bg-gradient-to-br from-primary-dark via-secondary-dark to-primary-dark">
+      {/* Navigation */}
+      <nav className="relative z-10 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-accent to-accent-hover rounded-lg flex items-center justify-center">
+              <BookmarkPlus className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-xl font-bold text-text-primary">Recollect</span>
+          </div>
+          
+          <div className="hidden md:flex items-center space-x-8">
+            <a href="#features" className="text-text-secondary hover:text-text-primary transition-colors">Features</a>
+            <a href="#how-it-works" className="text-text-secondary hover:text-text-primary transition-colors">How it Works</a>
+            <a href="#pricing" className="text-text-secondary hover:text-text-primary transition-colors">Pricing</a>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <main className="relative z-10 px-6 py-20">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="mb-8">
+            <h1 className="text-5xl md:text-6xl font-bold text-text-primary mb-6 leading-tight">
+              Remember Everything
+              <span className="block text-accent">With Recollect</span>
+            </h1>
+            
+            <p className="text-xl text-text-secondary leading-relaxed max-w-2xl mx-auto">
+              Transform your bookmarks into an intelligent discovery engine. 
+              Find what you need, when you need it, with AI-powered search and context-aware suggestions.
+            </p>
+          </div>
+
+          {/* Authentication Section */}
+          <div className="mb-16">
+            <div className="max-w-md mx-auto">
+              {error && (
+                <div className="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+                  <p className="text-red-400 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="bg-secondary-dark/50 backdrop-blur-sm border border-border rounded-xl p-8">
+                <h3 className="text-lg font-semibold text-text-primary mb-4">
+                  Get Started
+                </h3>
+                <p className="text-text-secondary text-sm mb-6">
+                  Sign in with Google to access your personalized bookmark dashboard
+                </p>
+
+                {loading ? (
+                  <div className="flex items-center justify-center p-4">
+                    <div className="w-6 h-6 border-2 border-accent/20 border-t-accent rounded-full animate-spin mr-3"></div>
+                    <span className="text-text-secondary">Signing you in...</span>
+                  </div>
+                ) : (
+                  <div ref={googleButtonRef} className="flex justify-center"></div>
+                )}
+
+                <p className="text-xs text-text-secondary mt-4">
+                  By signing in, you agree to our Terms of Service and Privacy Policy
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Features Preview */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+            <div className="bg-secondary-dark/30 backdrop-blur-sm border border-border rounded-xl p-6">
+              <div className="w-12 h-12 bg-accent/20 rounded-lg flex items-center justify-center mb-4 mx-auto">
+                <Search className="w-6 h-6 text-accent" />
+              </div>
+              <h3 className="text-lg font-semibold text-text-primary mb-2">Smart Search</h3>
+              <p className="text-text-secondary text-sm">
+                Find bookmarks by meaning, not just keywords. Our AI understands context and intent.
+              </p>
+            </div>
+
+            <div className="bg-secondary-dark/30 backdrop-blur-sm border border-border rounded-xl p-6">
+              <div className="w-12 h-12 bg-accent/20 rounded-lg flex items-center justify-center mb-4 mx-auto">
+                <Chrome className="w-6 h-6 text-accent" />
+              </div>
+              <h3 className="text-lg font-semibold text-text-primary mb-2">Chrome Integration</h3>
+              <p className="text-text-secondary text-sm">
+                Seamlessly sync with your Chrome bookmarks. Right-click any text to search instantly.
+              </p>
+            </div>
+
+            <div className="bg-secondary-dark/30 backdrop-blur-sm border border-border rounded-xl p-6">
+              <div className="w-12 h-12 bg-accent/20 rounded-lg flex items-center justify-center mb-4 mx-auto">
+                <Database className="w-6 h-6 text-accent" />
+              </div>
+              <h3 className="text-lg font-semibold text-text-primary mb-2">Secure Storage</h3>
+              <p className="text-text-secondary text-sm">
+                Your bookmarks are encrypted and stored securely. Access them from anywhere.
+              </p>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <a
+              href="#features"
+              className="inline-flex items-center px-6 py-3 bg-secondary-dark border border-border text-text-primary rounded-lg hover:bg-hover transition-colors"
+            >
+              Learn More
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </a>
+          </div>
+        </div>
       </main>
-      <div className="text-center py-8 text-white/70">
-        Made with <span className="text-red-500">❤️</span> in delhi by
-        Jailbreaker
+
+      {/* Background Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-accent/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-accent/5 rounded-full blur-3xl"></div>
       </div>
-      <Footer />
     </div>
   );
-}
+};
 
 export default Landing;

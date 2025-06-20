@@ -20,7 +20,6 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
-    // Animate in
     const timer = setTimeout(() => setIsVisible(true), 10);
     return () => clearTimeout(timer);
   }, []);
@@ -43,27 +42,27 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
   const getIcon = () => {
     switch (toast.type) {
       case 'success':
-        return <CheckCircle className="w-5 h-5 text-green-600" />;
+        return <CheckCircle className="w-5 h-5 text-green-400" />;
       case 'error':
-        return <AlertCircle className="w-5 h-5 text-red-600" />;
+        return <AlertCircle className="w-5 h-5 text-red-400" />;
       case 'loading':
-        return <RefreshCw className="w-5 h-5 text-blue-600 animate-spin" />;
+        return <RefreshCw className="w-5 h-5 text-accent animate-spin" />;
       default:
-        return <AlertCircle className="w-5 h-5 text-blue-600" />;
+        return <AlertCircle className="w-5 h-5 text-accent" />;
     }
   };
 
   const getStyles = () => {
-    const baseStyles = "border-l-4 shadow-lg";
+    const baseStyles = "border-l-4 shadow-lg bg-secondary-dark border border-border";
     switch (toast.type) {
       case 'success':
-        return `${baseStyles} bg-green-50 border-green-400`;
+        return `${baseStyles} border-l-green-400`;
       case 'error':
-        return `${baseStyles} bg-red-50 border-red-400`;
+        return `${baseStyles} border-l-red-400`;
       case 'loading':
-        return `${baseStyles} bg-blue-50 border-blue-400`;
+        return `${baseStyles} border-l-accent`;
       default:
-        return `${baseStyles} bg-blue-50 border-blue-400`;
+        return `${baseStyles} border-l-accent`;
     }
   };
 
@@ -81,11 +80,11 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
           {getIcon()}
         </div>
         <div className="ml-3 flex-1">
-          <h4 className="text-sm font-semibold text-gray-900">
+          <h4 className="text-sm font-semibold text-text-primary">
             {toast.title}
           </h4>
           {toast.message && (
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-text-secondary mt-1">
               {toast.message}
             </p>
           )}
@@ -93,7 +92,7 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
         {!toast.persistent && toast.type !== 'loading' && (
           <button
             onClick={handleClose}
-            className="ml-4 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+            className="ml-4 flex-shrink-0 text-text-secondary hover:text-text-primary transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -146,7 +145,6 @@ export const useToast = () => {
     setToasts([]);
   };
 
-  // Convenience methods
   const showSuccess = (title: string, message?: string, duration?: number) => {
     return addToast({ type: 'success', title, message, duration });
   };
