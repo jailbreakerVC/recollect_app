@@ -33,7 +33,7 @@ export default {
           900: "#312e81",
           950: "#1e1b4b",
         },
-        accent: {
+        'secondary-accent': {
           50: "#f0fdfa",
           100: "#ccfbf1",
           200: "#99f6e4",

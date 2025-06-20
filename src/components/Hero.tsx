@@ -11,7 +11,7 @@ const Hero: React.FC = () => {
           <div className="space-y-8">
             <h1 className="heading-1 font-mono">
               <span className="block">Remember Everything</span>
-              <span className="block text-accent-300">With Recollect</span>
+              <span className="block text-secondary-accent-300">With Recollect</span>
             </h1>
 
             <p className="text-xl text-white/90 leading-relaxed">
@@ -59,7 +59,7 @@ const Hero: React.FC = () => {
         <p className="text-lg sm:text-xl text-white/90 mb-6">
           Simply import your existing chrome bookmarks to get started.
         </p>
-        <p className="text-base sm:text-lg text-accent-300 font-mono tracking-wide">
+        <p className="text-base sm:text-lg text-secondary-accent-300 font-mono tracking-wide">
           #ChangeTheWayYouWeb
         </p>
       </section>

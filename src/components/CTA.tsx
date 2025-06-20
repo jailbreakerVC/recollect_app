@@ -7,7 +7,7 @@ const CTA: React.FC = () => {
       <div className="glass-card max-w-4xl mx-auto p-10 relative overflow-hidden">
         {/* Background decorative elements */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-accent-500/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary-accent-500/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
 
         <div className="relative z-10 text-center space-y-8">
           <h2 className="heading-2 mb-4">

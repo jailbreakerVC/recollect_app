@@ -23,7 +23,7 @@ const Demo: React.FC = () => {
               key={tab.id}
               className={`glass-button flex items-center gap-2 ${
                 activeTab === tab.id
-                  ? "bg-accent-500 text-white hover:bg-accent-500"
+                  ? "bg-secondary-accent-500 text-white hover:bg-secondary-accent-500"
                   : "bg-white/10 text-white/70 hover:bg-white/20 hover:text-white/90"
               }`}
               onClick={() => setActiveTab(tab.id)}
