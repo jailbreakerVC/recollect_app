@@ -72,32 +72,22 @@ const BookmarkManager: React.FC = () => {
   // Set up extension message listener for context search
   useEffect(() => {
     const handleExtensionMessage = (event: MessageEvent) => {
-      // Only process messages from the extension
-      if (event.data.source !== 'bookmark-manager-extension') {
-        return;
-      }
-
-      console.log('📨 BookmarkManager received extension message:', event.data);
-      
-      switch (event.data.action) {
-        case 'searchByKeyword':
-          handleKeywordSearchRequest(event.data.keyword, event.data.requestId);
-          break;
-        case 'searchByPageContext':
-          handlePageContextSearchRequest(event.data.context, event.data.requestId);
-          break;
-        default:
-          console.log('📨 Unknown action:', event.data.action);
+      if (event.data.source === 'bookmark-manager-extension') {
+        console.log('📨 BookmarkManager received extension message:', event.data);
+        
+        switch (event.data.action) {
+          case 'searchByKeyword':
+            handleKeywordSearchRequest(event.data.keyword, event.data.requestId);
+            break;
+          case 'searchByPageContext':
+            handlePageContextSearchRequest(event.data.context, event.data.requestId);
+            break;
+        }
       }
     };
 
-    // Add the event listener
     window.addEventListener('message', handleExtensionMessage);
-    
-    // Cleanup on unmount
-    return () => {
-      window.removeEventListener('message', handleExtensionMessage);
-    };
+    return () => window.removeEventListener('message', handleExtensionMessage);
   }, [user, bookmarks]);
 
   const handleKeywordSearchRequest = async (keyword: string, requestId: string) => {
@@ -105,11 +95,6 @@ const BookmarkManager: React.FC = () => {
     
     if (!user) {
       sendSearchResponse(requestId, false, 'User not logged in', []);
-      return;
-    }
-
-    if (!keyword || keyword.trim().length === 0) {
-      sendSearchResponse(requestId, false, 'Invalid search keyword', []);
       return;
     }
 
@@ -134,11 +119,6 @@ const BookmarkManager: React.FC = () => {
       return;
     }
 
-    if (!context || !context.title) {
-      sendSearchResponse(requestId, false, 'Invalid page context', []);
-      return;
-    }
-
     try {
       Logger.info('BookmarkManager', 'Handling page context search request', context);
       
@@ -155,28 +135,19 @@ const BookmarkManager: React.FC = () => {
   const sendSearchResponse = (requestId: string, success: boolean, message: string, results: any[]) => {
     console.log('📤 Sending search response:', { requestId, success, message, resultsCount: results.length });
     
-    // Send response back to extension with the exact format expected
-    const response = {
+    // Send response back to extension
+    window.postMessage({
       source: 'bookmark-manager-webapp',
       action: 'searchResults',
       requestId,
       success,
       message,
       results
-    };
-
-    console.log('📤 Posting message:', response);
-    
-    // Send response back to extension
-    window.postMessage(response, window.location.origin);
+    }, window.location.origin);
   };
 
   const searchBookmarksByKeyword = async (keyword: string) => {
     const searchTerm = keyword.toLowerCase().trim();
-    
-    if (!searchTerm) {
-      return [];
-    }
     
     const results = bookmarks
       .filter(bookmark => 
@@ -208,10 +179,6 @@ const BookmarkManager: React.FC = () => {
       ...keywords.map((k: string) => k.toLowerCase()),
       domain.replace(/\./g, ' ')
     ].filter(Boolean);
-
-    if (searchTerms.length === 0) {
-      return [];
-    }
 
     // Score bookmarks based on context relevance
     const scoredBookmarks = bookmarks

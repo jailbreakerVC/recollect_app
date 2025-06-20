@@ -20,9 +20,9 @@ const Features: React.FC = () => {
               <div className="timeline-line"></div>
             )}
 
-            <div className="glass-card bg-gray-900/40 border-secondary-accent-500/20 ml-8">
+            <div className="glass-card bg-gray-900/40 border-accent-500/20 ml-8">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary-accent-500/20 text-secondary-accent-300 p-2.5">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center bg-accent-500/20 text-accent-300 p-2.5">
                   {feature.icon}
                 </div>
                 <div>

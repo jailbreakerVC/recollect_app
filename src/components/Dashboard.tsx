@@ -1,389 +1,207 @@
-import React, { useState } from 'react';
-import { 
-  BookmarkPlus, 
-  Search, 
-  Settings, 
-  User, 
-  LogOut, 
-  Menu, 
-  X, 
-  Chrome,
-  Database,
-  TrendingUp,
-  RefreshCw,
-  Filter,
-  Grid,
-  List,
-  Plus
-} from 'lucide-react';
+import React from 'react';
+import { LogOut, User, Mail, Shield, Clock, CheckCircle, Bookmark } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useSupabaseBookmarks } from '../hooks/useSupabaseBookmarks';
-import BookmarkCard from './BookmarkCard';
-import Sidebar from './Sidebar';
-import TopBar from './TopBar';
-import StatsCards from './StatsCards';
-import { ToastContainer, useToast } from './Toast';
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const {
-    bookmarks,
-    loading,
-    error,
-    extensionAvailable,
-    extensionStatus,
-    syncWithExtension,
-    addBookmark,
-    removeBookmark,
-    refreshBookmarks,
-    syncStatus,
-    lastSyncResult
-  } = useSupabaseBookmarks();
 
-  const { toasts, removeToast, showSuccess, showError, showLoading, updateToast } = useToast();
+  if (!user) return null;
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFolder, setSelectedFolder] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newBookmark, setNewBookmark] = useState({ title: '', url: '', folder: '' });
-
-  // Filter bookmarks based on search and folder
-  const filteredBookmarks = bookmarks.filter(bookmark => {
-    const matchesSearch = bookmark.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         bookmark.url.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFolder = selectedFolder === 'all' || bookmark.folder === selectedFolder;
-    return matchesSearch && matchesFolder;
-  });
-
-  const getFolderNames = () => {
-    const folderNames = Array.from(new Set(bookmarks.map(b => b.folder).filter(Boolean)));
-    return folderNames.sort();
-  };
-
-  const handleSync = async () => {
-    if (extensionStatus !== 'available') {
-      showError('Extension Not Available', 'Chrome extension is not installed or not responding.');
-      return;
-    }
-
-    const loadingToastId = showLoading('Syncing Bookmarks', 'Synchronizing with Chrome...');
-
-    try {
-      const result = await syncWithExtension((status) => {
-        updateToast(loadingToastId, { 
-          title: 'Syncing Bookmarks', 
-          message: status 
-        });
-      });
-      
-      removeToast(loadingToastId);
-      
-      if (result.hasChanges) {
-        const changes = [];
-        if (result.inserted > 0) changes.push(`${result.inserted} added`);
-        if (result.updated > 0) changes.push(`${result.updated} updated`);
-        if (result.removed > 0) changes.push(`${result.removed} removed`);
-        
-        showSuccess(
-          'Sync Complete', 
-          `Successfully synced ${result.total} bookmarks. Changes: ${changes.join(', ')}`
-        );
-      } else {
-        showSuccess('Sync Complete', 'Your bookmarks are already up to date');
-      }
-    } catch (err) {
-      removeToast(loadingToastId);
-      const message = err instanceof Error ? err.message : 'Failed to sync with extension';
-      showError('Sync Failed', message);
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to sign out?')) {
+      logout();
     }
   };
 
-  const handleAddBookmark = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newBookmark.title || !newBookmark.url) return;
-
-    const loadingToastId = showLoading('Adding Bookmark', 'Creating new bookmark...');
-
-    try {
-      await addBookmark(
-        newBookmark.title, 
-        newBookmark.url, 
-        newBookmark.folder || undefined
-      );
-      
-      removeToast(loadingToastId);
-      showSuccess('Bookmark Added', `"${newBookmark.title}" has been added successfully`);
-      
-      setNewBookmark({ title: '', url: '', folder: '' });
-      setShowAddForm(false);
-    } catch (err) {
-      removeToast(loadingToastId);
-      const message = err instanceof Error ? err.message : 'Failed to add bookmark';
-      showError('Add Failed', message);
-    }
-  };
-
-  const handleRemoveBookmark = async (id: string) => {
-    const bookmark = bookmarks.find(b => b.id === id);
-    if (!bookmark) return;
-
-    if (window.confirm(`Are you sure you want to remove "${bookmark.title}"?`)) {
-      const loadingToastId = showLoading('Removing Bookmark', 'Deleting bookmark...');
-
-      try {
-        await removeBookmark(id);
-        removeToast(loadingToastId);
-        showSuccess('Bookmark Removed', `"${bookmark.title}" has been removed`);
-      } catch (err) {
-        removeToast(loadingToastId);
-        const message = err instanceof Error ? err.message : 'Failed to remove bookmark';
-        showError('Remove Failed', message);
-      }
-    }
+  const handleViewBookmarks = () => {
+    // Navigate to bookmarks - in a real app this would use React Router
+    window.location.hash = '#bookmarks';
+    window.location.reload();
   };
 
   return (
-    <div className="min-h-screen bg-primary-dark text-text-primary">
-      <ToastContainer toasts={toasts} onClose={removeToast} />
-      
-      {/* Sidebar */}
-      <Sidebar 
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        user={user}
-        onLogout={logout}
-        extensionStatus={extensionStatus}
-        lastSyncResult={lastSyncResult}
-        onSync={handleSync}
-        loading={loading}
-      />
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      {/* Navigation Header */}
+      <nav className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-2 rounded-lg">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <span className="ml-3 text-xl font-bold text-gray-900">Secure Portal</span>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-3">
+                <img
+                  src={user.picture}
+                  alt={user.name}
+                  className="w-8 h-8 rounded-full border-2 border-gray-200"
+                />
+                <span className="hidden sm:block text-sm font-medium text-gray-700">
+                  {user.name}
+                </span>
+              </div>
+              
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
 
       {/* Main Content */}
-      <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
-        {/* Top Bar */}
-        <TopBar 
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          user={user}
-        />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Welcome Section */}
+        <div className="text-center mb-12">
+          <div className="relative inline-block mb-6">
+            <img
+              src={user.picture}
+              alt={user.name}
+              className="w-24 h-24 rounded-full border-4 border-white shadow-xl"
+            />
+            <div className="absolute -bottom-2 -right-2 bg-green-500 rounded-full p-2">
+              <CheckCircle className="w-5 h-5 text-white" />
+            </div>
+          </div>
+          
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            Welcome back, <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{user.name.split(' ')[0]}</span>!
+          </h1>
+          
+          <p className="text-lg text-gray-600 mb-8">
+            You have successfully authenticated using Google OAuth 2.0
+          </p>
 
-        {/* Main Dashboard Content */}
-        <main className="p-6 space-y-6">
-          {/* Stats Cards */}
-          <StatsCards 
-            totalBookmarks={bookmarks.length}
-            extensionStatus={extensionStatus}
-            lastSyncResult={lastSyncResult}
-            syncStatus={syncStatus}
-          />
+          <div className="inline-flex items-center px-6 py-3 bg-green-50 border border-green-200 rounded-full text-green-800">
+            <CheckCircle className="w-5 h-5 mr-2" />
+            <span className="font-medium">Authentication Successful</span>
+          </div>
+        </div>
 
-          {/* Controls Bar */}
-          <div className="bg-secondary-dark rounded-xl p-4 border border-border">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div className="flex flex-col sm:flex-row gap-3">
-                {/* Folder Filter */}
-                <div className="relative">
-                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
-                  <select
-                    value={selectedFolder}
-                    onChange={(e) => setSelectedFolder(e.target.value)}
-                    className="bg-primary-dark border border-border rounded-lg pl-10 pr-4 py-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-transparent appearance-none min-w-[150px]"
-                  >
-                    <option value="all">All Folders</option>
-                    {getFolderNames().map(folder => (
-                      <option key={folder} value={folder}>{folder}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* View Mode Toggle */}
-                <div className="flex bg-primary-dark rounded-lg border border-border">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-2 rounded-l-lg transition-colors ${
-                      viewMode === 'grid' 
-                        ? 'bg-accent text-white' 
-                        : 'text-text-secondary hover:text-text-primary'
-                    }`}
-                  >
-                    <Grid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-2 rounded-r-lg transition-colors ${
-                      viewMode === 'list' 
-                        ? 'bg-accent text-white' 
-                        : 'text-text-secondary hover:text-text-primary'
-                    }`}
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
+        {/* User Information Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+          {/* Profile Information */}
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow duration-300">
+            <div className="flex items-center mb-4">
+              <div className="bg-blue-100 p-3 rounded-lg">
+                <User className="w-6 h-6 text-blue-600" />
               </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowAddForm(true)}
-                  className="inline-flex items-center px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Bookmark
-                </button>
-                
-                <button
-                  onClick={refreshBookmarks}
-                  disabled={loading}
-                  className="inline-flex items-center px-4 py-2 bg-secondary-dark border border-border text-text-primary rounded-lg hover:bg-hover transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
+              <h3 className="ml-3 text-lg font-semibold text-gray-900">Profile Information</h3>
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium text-gray-500">Full Name</label>
+                <p className="text-gray-900 font-medium">{user.name}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">User ID</label>
+                <p className="text-gray-900 font-mono text-sm break-all">{user.id}</p>
               </div>
             </div>
           </div>
 
-          {/* Add Bookmark Form */}
-          {showAddForm && (
-            <div className="bg-secondary-dark rounded-xl p-6 border border-border">
-              <h3 className="text-lg font-semibold text-text-primary mb-4">Add New Bookmark</h3>
-              <form onSubmit={handleAddBookmark} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">Title</label>
-                    <input
-                      type="text"
-                      value={newBookmark.title}
-                      onChange={(e) => setNewBookmark({ ...newBookmark, title: e.target.value })}
-                      className="w-full px-3 py-2 bg-primary-dark border border-border rounded-lg text-text-primary focus:ring-2 focus:ring-accent focus:border-transparent"
-                      placeholder="Bookmark title"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">URL</label>
-                    <input
-                      type="url"
-                      value={newBookmark.url}
-                      onChange={(e) => setNewBookmark({ ...newBookmark, url: e.target.value })}
-                      className="w-full px-3 py-2 bg-primary-dark border border-border rounded-lg text-text-primary focus:ring-2 focus:ring-accent focus:border-transparent"
-                      placeholder="https://example.com"
-                      required
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">Folder (Optional)</label>
-                  <input
-                    type="text"
-                    value={newBookmark.folder}
-                    onChange={(e) => setNewBookmark({ ...newBookmark, folder: e.target.value })}
-                    className="w-full px-3 py-2 bg-primary-dark border border-border rounded-lg text-text-primary focus:ring-2 focus:ring-accent focus:border-transparent"
-                    placeholder="Folder name"
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50"
-                  >
-                    Add Bookmark
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddForm(false)}
-                    className="px-4 py-2 bg-secondary-dark border border-border text-text-primary rounded-lg hover:bg-hover transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
+          {/* Email Information */}
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow duration-300">
+            <div className="flex items-center mb-4">
+              <div className="bg-indigo-100 p-3 rounded-lg">
+                <Mail className="w-6 h-6 text-indigo-600" />
+              </div>
+              <h3 className="ml-3 text-lg font-semibold text-gray-900">Email Address</h3>
             </div>
-          )}
-
-          {/* Error Display */}
-          {error && (
-            <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4">
-              <div className="flex items-center">
-                <div className="flex-1">
-                  <p className="text-red-400 font-medium">Error</p>
-                  <p className="text-red-300 text-sm mt-1">{error}</p>
-                </div>
-                <button
-                  onClick={refreshBookmarks}
-                  className="ml-4 inline-flex items-center px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
-                >
-                  <RefreshCw className="w-3 h-3 mr-1" />
-                  Retry
-                </button>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium text-gray-500">Primary Email</label>
+                <p className="text-gray-900 font-medium break-all">{user.email}</p>
+              </div>
+              <div className="flex items-center text-sm text-green-600">
+                <CheckCircle className="w-4 h-4 mr-2" />
+                <span>Verified by Google</span>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Bookmarks Grid/List */}
-          {loading && bookmarks.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-center">
-                <div className="w-12 h-12 border-4 border-accent/20 border-t-accent rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-text-secondary">Loading your bookmarks...</p>
+          {/* Session Information */}
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow duration-300 md:col-span-2 lg:col-span-1">
+            <div className="flex items-center mb-4">
+              <div className="bg-green-100 p-3 rounded-lg">
+                <Clock className="w-6 h-6 text-green-600" />
+              </div>
+              <h3 className="ml-3 text-lg font-semibold text-gray-900">Session Status</h3>
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium text-gray-500">Status</label>
+                <div className="flex items-center">
+                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                  <p className="text-gray-900 font-medium">Active</p>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Session Type</label>
+                <p className="text-gray-900 font-medium">OAuth 2.0</p>
               </div>
             </div>
-          ) : filteredBookmarks.length === 0 ? (
-            <div className="text-center py-12">
-              <BookmarkPlus className="w-16 h-16 text-text-secondary mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium text-text-primary mb-2">
-                {searchTerm || selectedFolder !== 'all' ? 'No bookmarks match your filters' : 'No bookmarks found'}
-              </h3>
-              <p className="text-text-secondary mb-6">
-                {searchTerm || selectedFolder !== 'all' 
-                  ? 'Try adjusting your search or filter criteria'
-                  : 'Add your first bookmark or sync with Chrome extension'
-                }
-              </p>
-              {!searchTerm && selectedFolder === 'all' && (
-                <div className="flex justify-center gap-3">
-                  <button
-                    onClick={() => setShowAddForm(true)}
-                    className="inline-flex items-center px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Bookmark
-                  </button>
-                  {extensionStatus === 'available' && (
-                    <button
-                      onClick={handleSync}
-                      disabled={loading}
-                      className="inline-flex items-center px-4 py-2 bg-secondary-dark border border-border text-text-primary rounded-lg hover:bg-hover transition-colors disabled:opacity-50"
-                    >
-                      <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                      Sync Chrome
-                    </button>
-                  )}
-                </div>
-              )}
+          </div>
+        </div>
+
+        {/* Security Features */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-8 mb-12">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full mb-4">
+              <Shield className="w-8 h-8 text-white" />
             </div>
-          ) : (
-            <div className={
-              viewMode === 'grid' 
-                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'
-                : 'space-y-3'
-            }>
-              {filteredBookmarks.map((bookmark) => (
-                <BookmarkCard
-                  key={bookmark.id}
-                  bookmark={bookmark}
-                  viewMode={viewMode}
-                  onRemove={handleRemoveBookmark}
-                />
-              ))}
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Security Features Active</h2>
+            <p className="text-gray-600">Your session is protected by the following security measures</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+              <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-3" />
+              <h4 className="font-semibold text-gray-900 mb-2">OAuth 2.0</h4>
+              <p className="text-sm text-gray-600">Industry standard authentication protocol</p>
             </div>
-          )}
-        </main>
-      </div>
+            
+            <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <CheckCircle className="w-8 h-8 text-blue-600 mx-auto mb-3" />
+              <h4 className="font-semibold text-gray-900 mb-2">Token Expiry</h4>
+              <p className="text-sm text-gray-600">Automatic session timeout for security</p>
+            </div>
+            
+            <div className="text-center p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+              <CheckCircle className="w-8 h-8 text-indigo-600 mx-auto mb-3" />
+              <h4 className="font-semibold text-gray-900 mb-2">Secure Storage</h4>
+              <p className="text-sm text-gray-600">Encrypted local session management</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="text-center">
+          <div className="inline-flex space-x-4">
+            <button 
+              onClick={handleViewBookmarks}
+              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center"
+            >
+              <Bookmark className="w-5 h-5 mr-2" />
+              View Bookmarks
+            </button>
+            
+            <button className="px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-colors duration-200">
+              View Settings
+            </button>
+          </div>
+        </div>
+      </main>
     </div>
   );
 };
