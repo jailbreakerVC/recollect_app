@@ -1,6 +1,7 @@
 import React from "react";
-import { BookmarkPlus, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import HeroImage from "./HeroImage";
+import GoogleSignInButton from "./GoogleSignInButton";
 
 const Hero: React.FC = () => {
   return (
@@ -22,14 +23,17 @@ const Hero: React.FC = () => {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <a
-                href="#download"
-                className="glass-button bg-white text-primary-700 hover:bg-white/90 flex items-center justify-center gap-2"
-              >
-                <BookmarkPlus className="w-5 h-5" />
-                Install Extension
-              </a>
-
+              {/* <div ref={googleButtonRef}>
+                <a
+                  href="#download"
+                  className="glass-button bg-white text-primary-700 hover:bg-white/90 flex items-center justify-center gap-2"
+                >
+                  <BookmarkPlus className="w-5 h-5" />
+                  Install Extension
+                </a>
+                <
+              </div> */}
+              <GoogleSignInButton />
               <a
                 href="#how-it-works"
                 className="glass-button text-white flex items-center justify-center gap-2"
