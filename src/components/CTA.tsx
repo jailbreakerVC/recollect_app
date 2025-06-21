@@ -15,7 +15,7 @@ const CTA: React.FC = () => {
           </h2>
 
           <p className="text-white/90 text-xl max-w-2xl mx-auto">
-            Install BookmarkAI today and experience the future of intelligent bookmark management
+            Try Recollect today and experience the future of intelligent bookmark management
           </p>
 
           <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
@@ -39,17 +39,17 @@ const CTA: React.FC = () => {
           <div className="flex justify-center gap-8 pt-4">
             <div className="text-center">
               <div className="text-white font-bold text-3xl">10,000+</div>
-              <div className="text-white/70 text-sm">Active Users</div>
+              <div className="text-white/70 text-sm">Active Users (that's a lie)</div>
             </div>
 
             <div className="text-center">
               <div className="text-white font-bold text-3xl">4.8/5</div>
-              <div className="text-white/70 text-sm">User Rating</div>
+              <div className="text-white/70 text-sm">User Rating (by who?)</div>
             </div>
 
             <div className="text-center">
               <div className="text-white font-bold text-3xl">Free</div>
-              <div className="text-white/70 text-sm">Forever</div>
+              <div className="text-white/70 text-sm">Forever (and OSS too!)</div>
             </div>
           </div>
         </div>

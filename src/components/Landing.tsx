@@ -23,7 +23,7 @@ declare global {
 }
 
 function Landing() {
-  const { login, loading, error } = useAuth();
+  const { login, error } = useAuth();
   const googleButtonRef = useRef<HTMLDivElement>(null);
 
   const GoogleSignInButton = () => {
@@ -49,36 +49,6 @@ function Landing() {
             </div>
           )}
 
-          <div className="relative">
-            <div className="absolute inset-0 bg-white rounded-lg shadow-2xl blur-sm transform scale-105 opacity-50"></div>
-            <div className="relative bg-white p-8 rounded-lg shadow-xl border border-gray-100">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Welcome Back
-                </h3>
-                <p className="text-gray-600">
-                  Sign in to continue to your account
-                </p>
-              </div>
-
-              {loading ? (
-                <div className="flex items-center justify-center p-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span className="ml-3 text-gray-600">Signing you in...</span>
-                </div>
-              ) : (
-                <div
-                  ref={googleButtonRef}
-                  className="flex justify-center"
-                ></div>
-              )}
-
-              <p className="text-sm text-gray-500 mt-6 text-center">
-                By signing in, you agree to our Terms of Service and Privacy
-                Policy
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -113,13 +83,13 @@ function Landing() {
       <main>
         <Hero />
         <GoogleSignInButton></GoogleSignInButton>
+          <Demo />
         <Features />
-        <Demo />
         <CTA />
       </main>
       <div className="text-center py-8 text-white/70">
-        Made with <span className="text-red-500">❤️</span> in delhi by
-        Jailbreaker
+        Made with <span className="text-red-500">{' <3 '}</span> by
+        Jailbreaker 
       </div>
       <Footer />
     </div>

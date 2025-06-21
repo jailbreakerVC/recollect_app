@@ -7,7 +7,7 @@ const Demo: React.FC = () => {
   >("highlight");
 
   return (
-    <section id="demo" className="section">
+    <section id="demo" className="section pt-0">
       <div className="text-center mb-16">
         <h2 className="heading-2 mb-4">See Recollect in Action</h2>
         <p className="text-white/90 text-xl max-w-3xl mx-auto">

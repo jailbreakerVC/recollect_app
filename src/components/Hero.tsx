@@ -23,16 +23,6 @@ const Hero: React.FC = () => {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              {/* <div ref={googleButtonRef}>
-                <a
-                  href="#download"
-                  className="glass-button bg-white text-primary-700 hover:bg-white/90 flex items-center justify-center gap-2"
-                >
-                  <BookmarkPlus className="w-5 h-5" />
-                  Install Extension
-                </a>
-                <
-              </div> */}
               <GoogleSignInButton />
               <a
                 href="#how-it-works"
@@ -50,7 +40,7 @@ const Hero: React.FC = () => {
         </div>
       </section>
 
-      <section className="text-center max-w-5xl mx-auto px-4 pb-24">
+      <section className="text-center max-w-5xl mx-auto px-4 pb-0">
         <h2 className="text-2xl sm:text-3xl md:text-4xl font-mono mb-8 text-white">
           We're not trying to reinvent the bookmark,
           <br className="hidden sm:block" />
