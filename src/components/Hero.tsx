@@ -25,7 +25,7 @@ const Hero: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-4">
               <GoogleSignInButton />
               <a
-                href="#how-it-works"
+                href="#demo"
                 className="glass-button text-white flex items-center justify-center gap-2"
               >
                 Learn More
