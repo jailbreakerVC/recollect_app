@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import {
-  Bookmark,
   RefreshCw,
-  Chrome,
+  // Chrome,
   TestTube,
-  Bug,
-  Search,
+  // Bug,
+  // Search,
+  LogOut,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useSupabaseBookmarks } from "../hooks/useSupabaseBookmarks";
@@ -14,25 +14,25 @@ import { BookmarkService } from "../services/bookmarkService";
 import { ToastContainer, useToast } from "./Toast";
 import { BookmarkGrid } from "./BookmarkGrid";
 import { BookmarkControls } from "./BookmarkControls";
-import { StatusCards } from "./StatusCards";
-import { DebugPanel } from "./DebugPanel";
+// import { StatusCards } from "./StatusCards";
+// import { DebugPanel } from "./DebugPanel";
 import { ConnectionStatus, SortOption } from "../types";
 import { Logger } from "../utils/logger";
 
 const BookmarkManager: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const {
     bookmarks,
     loading,
-    error,
-    extensionAvailable,
+    // error,
+    // extensionAvailable,
     extensionStatus,
     syncWithExtension,
     addBookmark,
     removeBookmark,
     refreshBookmarks,
     syncStatus,
-    lastSyncResult,
+    // lastSyncResult,
   } = useSupabaseBookmarks();
 
   const {
@@ -43,6 +43,12 @@ const BookmarkManager: React.FC = () => {
     showLoading,
     updateToast,
   } = useToast();
+
+  const handleLogout = () => {
+    if (window.confirm("Are you sure you want to sign out?")) {
+      logout();
+    }
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
@@ -818,13 +824,20 @@ const BookmarkManager: React.FC = () => {
                     <TestTube className="w-4 h-4 mr-2" />
                     Test DB
                   </button>
-                  <button
+                  {/* <button
                     onClick={handleDebugSync}
                     className="inline-flex items-center px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
                     title="Debug sync analysis"
                   >
                     <Bug className="w-4 h-4 mr-2" />
                     Debug Sync
+                  </button> */}
+                  <button
+                    onClick={handleLogout}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sign Out
                   </button>
                 </>
               )}
