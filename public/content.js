@@ -370,6 +370,18 @@ class ContentScriptManager {
   }
 
   injectExtensionFlag() {
+    // Set the global flag to indicate extension is available
+    window.bookmarkExtensionAvailable = true;
+    
+    // Also dispatch an event to notify the web app
+    window.dispatchEvent(new CustomEvent('extensionAvailabilityChanged', {
+      detail: { available: true }
+    }));
+    
+    console.log('✅ Extension flag injected and availability event dispatched');
+  }
+
+  injectExtensionFlagIntoWebApp() {
     console.log('🚀 Injecting extension availability flag');
     
     const script = document.createElement('script');
@@ -385,6 +397,18 @@ class ContentScriptManager {
             features: ['contextSearch', 'pageAnalysis', 'contextMenu']
           }
         }));
+        
+        // Dispatch availability change event
+        window.dispatchEvent(new CustomEvent('extensionAvailabilityChanged', {
+          detail: { available: true }
+        }));
+        
+        // Dispatch the event again after a short delay to catch any race conditions
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('extensionAvailabilityChanged', {
+            detail: { available: true }
+          }));
+        }, 500);
         
         // Set up sync completion bridge
         window.notifyExtensionSyncComplete = function(data) {

@@ -1,6 +1,26 @@
-import { ExtensionBookmark, ExtensionMessage } from '../types';
 import { Logger } from '../utils/logger';
 import { APP_CONFIG, EXTENSION_MESSAGES, IGNORED_MESSAGE_SOURCES } from '../constants';
+
+// Define types for Chrome extension
+interface ChromeRuntime {
+  id?: string;
+  lastError?: any;
+  sendMessage(message: any, callback?: (response: any) => void): void;
+  onMessage?: {
+    addListener(callback: (message: any, sender: any, sendResponse: (response?: any) => void) => boolean): void;
+  };
+  onConnect?: {
+    addListener(callback: (port: any) => void): void;
+  };
+}
+
+declare global {
+  interface Window {
+    chrome?: {
+      runtime?: ChromeRuntime;
+    };
+  }
+}
 
 // Define validation functions directly to avoid import issues
 const isValidUrl = (url: string): boolean => {
@@ -35,6 +55,7 @@ export class ExtensionService {
   private globalMessageHandler: ((event: MessageEvent) => void) | null = null;
   private availabilityCheckInterval: NodeJS.Timeout | null = null;
   private lastAvailabilityCheck = 0;
+  private lastConnectionTest: number | null = null;
 
   private constructor() {}
 
@@ -181,7 +202,7 @@ export class ExtensionService {
     }
   }
 
-  private testExtensionPresence(): boolean {
+  private async testExtensionPresence(): Promise<boolean> {
     // Check multiple indicators of extension presence
     const hasFlag = !!(window as any).bookmarkExtensionAvailable;
     const hasExtensionContext = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
@@ -191,16 +212,64 @@ export class ExtensionService {
       return true;
     }
     
+    // If we have the flag but haven't tested yet, do a connection test
+    if (hasFlag && !this.lastConnectionTest) {
+      try {
+        // Send a test message to verify connection
+        const response = await this.sendMessageToExtension({
+          action: 'connectionTest',
+          timestamp: Date.now()
+        });
+        
+        if (response && response.success) {
+          this.lastConnectionTest = Date.now();
+          return true;
+        }
+      } catch (error) {
+        Logger.error('ExtensionService', 'Connection test failed', error);
+      }
+    }
+    
     // Otherwise, rely on the flag set by the content script
     return hasFlag;
   }
 
-  addMessageHandler(id: string, handler: (event: MessageEvent) => void): void {
-    this.messageHandlers.set(id, handler);
+  private async sendMessageToExtension(message: any): Promise<any> {
+    return new Promise((resolve) => {
+      const requestId = Date.now().toString();
+      
+      // Add message handler
+      const handlerId = this.addMessageHandler('connectionTestResponse', (event) => {
+        if (event.data?.requestId === requestId) {
+          resolve(event.data);
+          this.removeMessageHandler(handlerId);
+        }
+      });
+      
+      // Send message to extension
+      window.postMessage({
+        source: 'bookmark-manager-webapp',
+        action: 'connectionTest',
+        requestId,
+        timestamp: Date.now()
+      }, window.location.origin);
+      
+      // Timeout after 2 seconds
+      setTimeout(() => {
+        this.removeMessageHandler(handlerId);
+        resolve(null);
+      }, 2000);
+    });
   }
 
-  removeMessageHandler(id: string): void {
-    this.messageHandlers.delete(id);
+  addMessageHandler(id: string, handler: (event: MessageEvent) => void): string {
+    const handlerId = Date.now().toString();
+    this.messageHandlers.set(handlerId, handler);
+    return handlerId;
+  }
+
+  removeMessageHandler(handlerId: string): void {
+    this.messageHandlers.delete(handlerId);
   }
 
   isExtensionAvailable(): boolean {
