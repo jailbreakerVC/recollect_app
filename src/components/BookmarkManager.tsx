@@ -832,13 +832,6 @@ const BookmarkManager: React.FC = () => {
                     <Bug className="w-4 h-4 mr-2" />
                     Debug Sync
                   </button> */}
-                  <button
-                    onClick={handleLogout}
-                    className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sign Out
-                  </button>
                 </>
               )}
               <button
@@ -862,6 +855,13 @@ const BookmarkManager: React.FC = () => {
                   className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
                 />
                 Sync Chrome
+              </button>
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
               </button>
 
               {/* <button
