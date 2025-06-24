@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Bookmark Manager Extension",
-  "version": "1.2.0",
+  "name": "Recollect",
+  "version": "0.1.1",
   "description": "Access and sync your Chrome bookmarks with smart context search and automatic page analysis",
   "permissions": [
     "bookmarks",
@@ -27,7 +27,7 @@
     {
       "matches": [
         "http://localhost:*/*",
-        "https://localhost:*/*", 
+        "https://localhost:*/*",
         "https://*.netlify.app/*",
         "https://*.vercel.app/*"
       ],
@@ -48,7 +48,7 @@
   },
   "icons": {
     "16": "icon16.png",
-    "32": "icon32.png", 
+    "32": "icon32.png",
     "48": "icon48.png",
     "128": "icon128.png"
   },
