@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase";
 import { DatabaseBookmark } from "../types";
 import { Logger } from "../utils/logger";
+import { OpenAIService } from "./openaiService";
 
 // Define validation functions directly to avoid circular imports
 const validateUserId = (userId: string): boolean => {
@@ -161,35 +162,44 @@ export class BookmarkService {
       chromeBookmarkId,
     });
 
-    const bookmarkData = sanitizeBookmarkData({
-      user_id: userId,
-      title,
-      url,
-      folder,
-      chrome_bookmark_id: chromeBookmarkId,
-      date_added: new Date().toISOString(),
-    });
+    try {
+      // Generate embedding for the bookmark title
+      const embedding = await OpenAIService.generateEmbedding(title);
 
-    const { data, error } = await supabase
-      .from("bookmarks")
-      .insert(bookmarkData)
-      .select()
-      .single();
-
-    if (error) {
-      Logger.error("BookmarkService", "Failed to add bookmark", {
-        error,
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
+      const bookmarkData = sanitizeBookmarkData({
+        user_id: userId,
+        title,
+        url,
+        folder,
+        chrome_bookmark_id: chromeBookmarkId,
+        date_added: new Date().toISOString(),
+        title_embedding: embedding,
       });
 
-      throw new Error(`Failed to add bookmark: ${error.message}`);
-    }
+      const { data, error } = await supabase
+        .from("bookmarks")
+        .insert(bookmarkData)
+        .select()
+        .single();
 
-    Logger.info("BookmarkService", `Bookmark added successfully: ${data.id}`);
-    return data;
+      if (error) {
+        Logger.error("BookmarkService", "Failed to add bookmark", {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+
+        throw new Error(`Failed to add bookmark: ${error.message}`);
+      }
+
+      Logger.info("BookmarkService", `Bookmark added successfully: ${data.id}`);
+      return data;
+    } catch (error) {
+      Logger.error("BookmarkService", "Failed to add bookmark with embedding", error);
+      throw error;
+    }
   }
 
   static async updateBookmark(
@@ -206,23 +216,43 @@ export class BookmarkService {
       updates,
     });
 
-    const sanitizedUpdates = sanitizeBookmarkData(updates);
+    try {
+      const { data, error } = await supabase
+        .from("bookmarks")
+        .update(updates)
+        .eq("id", bookmarkId)
+        .eq("user_id", userId)
+        .select()
+        .single();
 
-    const { data, error } = await supabase
-      .from("bookmarks")
-      .update(sanitizedUpdates)
-      .eq("id", bookmarkId)
-      .eq("user_id", userId)
-      .select()
-      .single();
+      if (error) {
+        Logger.error("BookmarkService", "Failed to update bookmark", error);
+        throw new Error(`Failed to update bookmark: ${error.message}`);
+      }
 
-    if (error) {
+      // If title was updated, generate new embedding
+      if (updates.title) {
+        try {
+          const embedding = await OpenAIService.generateEmbedding(updates.title);
+          await supabase
+            .from("bookmarks")
+            .update({ title_embedding: embedding })
+            .eq("id", bookmarkId)
+            .eq("user_id", userId);
+        } catch (error) {
+          Logger.error("BookmarkService", "Failed to generate new embedding after update", {
+            bookmarkId,
+            error
+          });
+        }
+      }
+
+      Logger.info("BookmarkService", "Bookmark updated successfully");
+      return data;
+    } catch (error) {
       Logger.error("BookmarkService", "Failed to update bookmark", error);
-      throw new Error(`Failed to update bookmark: ${error.message}`);
+      throw error;
     }
-
-    Logger.info("BookmarkService", "Bookmark updated successfully");
-    return data;
   }
 
   static async removeBookmark(
@@ -293,51 +323,59 @@ export class BookmarkService {
       throw new Error("Invalid user ID");
     }
 
-    if (bookmarks.length === 0) {
-      Logger.info("BookmarkService", "No bookmarks to insert");
-      return [];
-    }
+    Logger.info("BookmarkService", "Bulk inserting bookmarks", {
+      userId,
+      count: bookmarks.length,
+    });
 
-    Logger.info(
-      "BookmarkService",
-      `Bulk inserting ${bookmarks.length} bookmarks for user: ${userId}`,
-    );
-
-    const sanitizedBookmarks = bookmarks.map((bookmark) =>
-      sanitizeBookmarkData({
-        ...bookmark,
+    try {
+      const sanitizedBookmarks = bookmarks.map(b => sanitizeBookmarkData({
+        ...b,
         user_id: userId,
-      }),
-    );
+        date_added: new Date().toISOString(),
+      }));
 
-    Logger.debug(
-      "BookmarkService",
-      "Sample bookmarks to insert",
-      sanitizedBookmarks.slice(0, 3),
-    );
+      const { data, error } = await supabase
+        .from("bookmarks")
+        .insert(sanitizedBookmarks)
+        .select();
 
-    const { data, error } = await supabase
-      .from("bookmarks")
-      .insert(sanitizedBookmarks)
-      .select();
+      if (error) {
+        Logger.error("BookmarkService", "Failed to bulk insert bookmarks", {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
 
-    if (error) {
-      Logger.error("BookmarkService", "Failed to bulk insert bookmarks", {
-        error,
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-      });
+        throw new Error(`Failed to bulk insert bookmarks: ${error.message}`);
+      }
 
-      throw new Error(`Failed to bulk insert bookmarks: ${error.message}`);
+      // Generate embeddings for all inserted bookmarks
+      await Promise.all(data.map(async (bookmark) => {
+        if (bookmark.title) {
+          try {
+            const embedding = await OpenAIService.generateEmbedding(bookmark.title);
+            await supabase
+              .from("bookmarks")
+              .update({ title_embedding: embedding })
+              .eq("id", bookmark.id);
+          } catch (error) {
+            Logger.error("BookmarkService", "Failed to generate embedding for bookmark", {
+              bookmarkId: bookmark.id,
+              error
+            });
+          }
+        }
+      }));
+
+      Logger.info("BookmarkService", `Bulk inserted ${data.length} bookmarks`);
+      return data;
+    } catch (error) {
+      Logger.error("BookmarkService", "Failed to bulk insert bookmarks", error);
+      throw error;
     }
-
-    Logger.info(
-      "BookmarkService",
-      `Successfully inserted ${data?.length || 0} bookmarks`,
-    );
-    return data || [];
   }
 
   static async removeBookmarksByChromeIds(

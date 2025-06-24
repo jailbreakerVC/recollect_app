@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { DatabaseBookmark } from '../types';
 import { Logger } from '../utils/logger';
+import { OpenAIService } from './openaiService';
 
 export interface SemanticSearchResult extends DatabaseBookmark {
   similarity_score: number;
@@ -42,21 +43,63 @@ export class SemanticSearchService {
       similarityThreshold
     });
 
-    // Create search query from page context
-    const searchQuery = this.createSearchQueryFromContext(pageContext);
-    
     try {
-      const results = await this.performSemanticSearch(
-        searchQuery,
-        userId,
-        similarityThreshold,
-        maxResults
-      );
+      // Generate vector embedding for the search context
+      const context = [
+        pageContext.title,
+        pageContext.description,
+        ...pageContext.keywords
+      ].filter(Boolean).join(' ');
+
+      const queryEmbedding = await OpenAIService.generateQueryEmbedding(context);
+
+      // First try vector search with a reasonable threshold
+      const { data: vectorResults, error: vectorError } = await supabase.rpc('search_bookmarks_vector', {
+        query_embedding: queryEmbedding,
+        user_id_param: userId,
+        max_results: maxResults,
+        min_similarity: 0.15  // Start with a moderate threshold
+      });
+
+      // If we got no results or very few results, try with a lower threshold
+      if (!vectorResults || vectorResults.length < 3) {
+        const { data: moreResults, error: moreError } = await supabase.rpc('search_bookmarks_vector', {
+          query_embedding: queryEmbedding,
+          user_id_param: userId,
+          max_results: maxResults,
+          min_similarity: 0.05  // Lower threshold for more results
+        });
+        
+        if (!moreError && moreResults) {
+          vectorResults = moreResults;
+        }
+      }
+
+      // If we still have no results, fall back to keyword search
+      if (!vectorResults || vectorResults.length === 0) {
+        const { data: keywordResults, error: keywordError } = await supabase.rpc('search_bookmarks_keywords', {
+          search_query: context,
+          user_id_param: userId,
+          max_results: maxResults
+        });
+
+        if (!keywordError && keywordResults) {
+          return keywordResults;
+        }
+      }
+
+      // Return vector search results if we got any
+      return vectorResults || [];
+
+      if (error) {
+        Logger.error('SemanticSearchService', 'Vector search failed', error);
+        throw new Error(`Vector search failed: ${error.message}`);
+      }
 
       // Filter out the current page if it exists in bookmarks
       const filteredResults = includeUrl 
-        ? results 
-        : results.filter(bookmark => !this.isSameUrl(bookmark.url, pageContext.url));
+        ? data 
+        : data.filter(bookmark => !this.isSameUrl(bookmark.url, pageContext.url));
 
       Logger.info('SemanticSearchService', `Found ${filteredResults.length} related bookmarks`);
       return filteredResults;
@@ -64,9 +107,9 @@ export class SemanticSearchService {
     } catch (error) {
       Logger.error('SemanticSearchService', 'Failed to search by page context', error);
       
-      // Fallback to simple text search
-      return this.performFallbackSearch(searchQuery, userId, maxResults);
-    }
+      // Fallback to semantic search
+      return this.performFallbackSearch(context, userId, maxResults);
+    }  
   }
 
   /**
@@ -82,7 +125,7 @@ export class SemanticSearchService {
   ): Promise<SemanticSearchResult[]> {
     const {
       maxResults = 20,
-      similarityThreshold = 0.3
+      similarityThreshold = 0.15
     } = options;
 
     Logger.info('SemanticSearchService', 'Searching by query', {
@@ -93,17 +136,40 @@ export class SemanticSearchService {
     });
 
     try {
-      return await this.performSemanticSearch(
+      // First try with the original query
+      let results = await this.performSemanticSearch(
         query,
         userId,
         similarityThreshold,
         maxResults
       );
+
+      // If we got no results or very few results, try variations
+      if (!results || results.length < 3) {
+        // Try with expanded terms
+        const expandedQuery = query
+          .replace(/rag\s*gpt/gi, 'retrieval augmented generation gpt')
+          .replace(/gpt/gi, 'generative pre-trained transformer')
+          .replace(/ai/gi, 'artificial intelligence')
+          .replace(/ml/gi, 'machine learning');
+
+        results = await this.performSemanticSearch(
+          expandedQuery,
+          userId,
+          similarityThreshold * 0.8, // Lower threshold for variations
+          maxResults
+        );
+
+        // If still not enough results, try keyword search
+        if (!results || results.length < 3) {
+          results = await this.performFallbackSearch(query, userId, maxResults);
+        }
+      }
+
+      return results;
     } catch (error) {
       Logger.error('SemanticSearchService', 'Failed to search by query', error);
-      
-      // Fallback to simple text search
-      return this.performFallbackSearch(query, userId, maxResults);
+      return await this.performFallbackSearch(query, userId, maxResults);
     }
   }
 

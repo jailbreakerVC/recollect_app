@@ -25,6 +25,7 @@ export interface DatabaseBookmark {
   date_added: string;
   created_at: string;
   updated_at: string;
+  title_embedding?: number[]; // Optional for backward compatibility
 }
 
 export interface SyncResult {
