@@ -1,14 +1,14 @@
-import { supabase } from '../lib/supabase';
-import { DatabaseBookmark } from '../types';
-import { Logger } from '../utils/logger';
+import { supabase } from "../lib/supabase";
+import { DatabaseBookmark } from "../types";
+import { Logger } from "../utils/logger";
 
 // Define validation functions directly to avoid circular imports
 const validateUserId = (userId: string): boolean => {
-  return typeof userId === 'string' && userId.trim().length > 0;
+  return typeof userId === "string" && userId.trim().length > 0;
 };
 
 const isValidBookmarkTitle = (title: string): boolean => {
-  return typeof title === 'string' && title.trim().length > 0;
+  return typeof title === "string" && title.trim().length > 0;
 };
 
 const isValidUrl = (url: string): boolean => {
@@ -20,19 +20,23 @@ const isValidUrl = (url: string): boolean => {
   }
 };
 
-const isValidDatabaseBookmark = (bookmark: any): bookmark is DatabaseBookmark => {
+const isValidDatabaseBookmark = (
+  bookmark: any,
+): bookmark is DatabaseBookmark => {
   return (
     bookmark &&
-    typeof bookmark.id === 'string' &&
-    typeof bookmark.user_id === 'string' &&
-    typeof bookmark.title === 'string' &&
-    typeof bookmark.url === 'string' &&
+    typeof bookmark.id === "string" &&
+    typeof bookmark.user_id === "string" &&
+    typeof bookmark.title === "string" &&
+    typeof bookmark.url === "string" &&
     isValidUrl(bookmark.url) &&
     isValidBookmarkTitle(bookmark.title)
   );
 };
 
-const sanitizeBookmarkData = (bookmark: Partial<DatabaseBookmark>): Partial<DatabaseBookmark> => {
+const sanitizeBookmarkData = (
+  bookmark: Partial<DatabaseBookmark>,
+): Partial<DatabaseBookmark> => {
   return {
     ...bookmark,
     title: bookmark.title?.trim(),
@@ -40,85 +44,97 @@ const sanitizeBookmarkData = (bookmark: Partial<DatabaseBookmark>): Partial<Data
     folder: bookmark.folder?.trim() || undefined,
   };
 };
+//comment
 
 export class BookmarkService {
   private static async setUserContext(userId: string): Promise<void> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
-    Logger.debug('BookmarkService', `Setting user context for: ${userId}`);
-    
+    Logger.debug("BookmarkService", `Setting user context for: ${userId}`);
+
     try {
       // Try the new function name first
-      const { error } = await supabase.rpc('set_app_user_context', {
-        user_id: userId
+      const { error } = await supabase.rpc("set_app_user_context", {
+        user_id: userId,
       });
 
       if (error) {
-        Logger.warn('BookmarkService', 'User context function not available (RLS disabled)', error);
+        Logger.warn(
+          "BookmarkService",
+          "User context function not available (RLS disabled)",
+          error,
+        );
       } else {
-        Logger.debug('BookmarkService', 'User context set successfully');
+        Logger.debug("BookmarkService", "User context set successfully");
       }
     } catch (err) {
-      Logger.warn('BookmarkService', 'User context RPC not available (RLS disabled)', err);
+      Logger.warn(
+        "BookmarkService",
+        "User context RPC not available (RLS disabled)",
+        err,
+      );
     }
   }
 
   static async debugUserContext(): Promise<any> {
     try {
       // Try the new function name first
-      const { data, error } = await supabase.rpc('debug_user_context');
-      
+      const { data, error } = await supabase.rpc("debug_user_context");
+
       if (error) {
-        Logger.warn('BookmarkService', 'Debug context error', error);
-        
+        Logger.warn("BookmarkService", "Debug context error", error);
+
         return {
-          error: 'Debug function not available',
+          error: "Debug function not available",
           rls_disabled: true,
           fallback_info: {
             supabase_url: !!import.meta.env.VITE_SUPABASE_URL,
             supabase_key: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
-            timestamp: new Date().toISOString()
-          }
+            timestamp: new Date().toISOString(),
+          },
         };
       }
-      
-      Logger.debug('BookmarkService', 'User context debug', data);
+
+      Logger.debug("BookmarkService", "User context debug", data);
       return data;
     } catch (err) {
-      Logger.warn('BookmarkService', 'Debug context failed', err);
-      return { 
-        error: 'Debug function call failed',
+      Logger.warn("BookmarkService", "Debug context failed", err);
+      return {
+        error: "Debug function call failed",
         rls_disabled: true,
-        details: err instanceof Error ? err.message : 'Unknown error'
+        details: err instanceof Error ? err.message : "Unknown error",
       };
     }
   }
 
   static async getBookmarks(userId: string): Promise<DatabaseBookmark[]> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
-    Logger.info('BookmarkService', `Fetching bookmarks for user: ${userId}`);
-    
+    Logger.info("BookmarkService", `Fetching bookmarks for user: ${userId}`);
+
     await this.setUserContext(userId);
 
     const { data, error } = await supabase
-      .from('bookmarks')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date_added', { ascending: false });
+      .from("bookmarks")
+      .select("*")
+      .eq("user_id", userId)
+      .order("date_added", { ascending: false });
 
     if (error) {
-      Logger.error('BookmarkService', 'Failed to fetch bookmarks', error);
+      Logger.error("BookmarkService", "Failed to fetch bookmarks", error);
       throw new Error(`Failed to fetch bookmarks: ${error.message}`);
     }
 
     const validBookmarks = (data || []).filter(isValidDatabaseBookmark);
-    
-    Logger.info('BookmarkService', `Fetched ${validBookmarks.length} valid bookmarks for user ${userId}`);
+
+    Logger.info(
+      "BookmarkService",
+      `Fetched ${validBookmarks.length} valid bookmarks for user ${userId}`,
+    );
     return validBookmarks;
   }
 
@@ -127,18 +143,24 @@ export class BookmarkService {
     title: string,
     url: string,
     folder?: string,
-    chromeBookmarkId?: string
+    chromeBookmarkId?: string,
   ): Promise<DatabaseBookmark> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
     if (!isValidBookmarkTitle(title) || !isValidUrl(url)) {
-      throw new Error('Invalid bookmark data');
+      throw new Error("Invalid bookmark data");
     }
 
-    Logger.info('BookmarkService', 'Adding bookmark', { userId, title, url, folder, chromeBookmarkId });
-    
+    Logger.info("BookmarkService", "Adding bookmark", {
+      userId,
+      title,
+      url,
+      folder,
+      chromeBookmarkId,
+    });
+
     const bookmarkData = sanitizeBookmarkData({
       user_id: userId,
       title,
@@ -149,224 +171,257 @@ export class BookmarkService {
     });
 
     const { data, error } = await supabase
-      .from('bookmarks')
+      .from("bookmarks")
       .insert(bookmarkData)
       .select()
       .single();
 
     if (error) {
-      Logger.error('BookmarkService', 'Failed to add bookmark', {
+      Logger.error("BookmarkService", "Failed to add bookmark", {
         error,
         code: error.code,
         message: error.message,
         details: error.details,
-        hint: error.hint
+        hint: error.hint,
       });
-      
+
       throw new Error(`Failed to add bookmark: ${error.message}`);
     }
 
-    Logger.info('BookmarkService', `Bookmark added successfully: ${data.id}`);
+    Logger.info("BookmarkService", `Bookmark added successfully: ${data.id}`);
     return data;
   }
 
   static async updateBookmark(
     bookmarkId: string,
     userId: string,
-    updates: Partial<DatabaseBookmark>
+    updates: Partial<DatabaseBookmark>,
   ): Promise<DatabaseBookmark> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
-    Logger.info('BookmarkService', 'Updating bookmark', { bookmarkId, updates });
+    Logger.info("BookmarkService", "Updating bookmark", {
+      bookmarkId,
+      updates,
+    });
 
     const sanitizedUpdates = sanitizeBookmarkData(updates);
 
     const { data, error } = await supabase
-      .from('bookmarks')
+      .from("bookmarks")
       .update(sanitizedUpdates)
-      .eq('id', bookmarkId)
-      .eq('user_id', userId)
+      .eq("id", bookmarkId)
+      .eq("user_id", userId)
       .select()
       .single();
 
     if (error) {
-      Logger.error('BookmarkService', 'Failed to update bookmark', error);
+      Logger.error("BookmarkService", "Failed to update bookmark", error);
       throw new Error(`Failed to update bookmark: ${error.message}`);
     }
 
-    Logger.info('BookmarkService', 'Bookmark updated successfully');
+    Logger.info("BookmarkService", "Bookmark updated successfully");
     return data;
   }
 
-  static async removeBookmark(bookmarkId: string, userId: string): Promise<void> {
+  static async removeBookmark(
+    bookmarkId: string,
+    userId: string,
+  ): Promise<void> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
-    Logger.info('BookmarkService', `Removing bookmark: ${bookmarkId}`);
+    Logger.info("BookmarkService", `Removing bookmark: ${bookmarkId}`);
 
     const { error } = await supabase
-      .from('bookmarks')
+      .from("bookmarks")
       .delete()
-      .eq('id', bookmarkId)
-      .eq('user_id', userId);
+      .eq("id", bookmarkId)
+      .eq("user_id", userId);
 
     if (error) {
-      Logger.error('BookmarkService', 'Failed to remove bookmark', error);
+      Logger.error("BookmarkService", "Failed to remove bookmark", error);
       throw new Error(`Failed to remove bookmark: ${error.message}`);
     }
 
-    Logger.info('BookmarkService', 'Bookmark removed successfully');
+    Logger.info("BookmarkService", "Bookmark removed successfully");
   }
 
   static async getBookmarkByChromeId(
     chromeBookmarkId: string,
-    userId: string
+    userId: string,
   ): Promise<DatabaseBookmark | null> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
-    Logger.debug('BookmarkService', `Looking for bookmark with Chrome ID: ${chromeBookmarkId} for user: ${userId}`);
+    Logger.debug(
+      "BookmarkService",
+      `Looking for bookmark with Chrome ID: ${chromeBookmarkId} for user: ${userId}`,
+    );
 
     const { data, error } = await supabase
-      .from('bookmarks')
-      .select('*')
-      .eq('chrome_bookmark_id', chromeBookmarkId)
-      .eq('user_id', userId)
+      .from("bookmarks")
+      .select("*")
+      .eq("chrome_bookmark_id", chromeBookmarkId)
+      .eq("user_id", userId)
       .single();
 
-    if (error && error.code !== 'PGRST116') {
-      Logger.error('BookmarkService', 'Failed to fetch bookmark by Chrome ID', error);
+    if (error && error.code !== "PGRST116") {
+      Logger.error(
+        "BookmarkService",
+        "Failed to fetch bookmark by Chrome ID",
+        error,
+      );
       throw new Error(`Failed to fetch bookmark: ${error.message}`);
     }
 
-    Logger.debug('BookmarkService', `Bookmark by Chrome ID result: ${data ? 'Found' : 'Not found'}`);
+    Logger.debug(
+      "BookmarkService",
+      `Bookmark by Chrome ID result: ${data ? "Found" : "Not found"}`,
+    );
     return data || null;
   }
 
   static async bulkInsertBookmarks(
     userId: string,
-    bookmarks: Partial<DatabaseBookmark>[]
+    bookmarks: Partial<DatabaseBookmark>[],
   ): Promise<DatabaseBookmark[]> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
     if (bookmarks.length === 0) {
-      Logger.info('BookmarkService', 'No bookmarks to insert');
+      Logger.info("BookmarkService", "No bookmarks to insert");
       return [];
     }
 
-    Logger.info('BookmarkService', `Bulk inserting ${bookmarks.length} bookmarks for user: ${userId}`);
-    
-    const sanitizedBookmarks = bookmarks.map(bookmark => 
-      sanitizeBookmarkData({
-        ...bookmark,
-        user_id: userId
-      })
+    Logger.info(
+      "BookmarkService",
+      `Bulk inserting ${bookmarks.length} bookmarks for user: ${userId}`,
     );
 
-    Logger.debug('BookmarkService', 'Sample bookmarks to insert', sanitizedBookmarks.slice(0, 3));
+    const sanitizedBookmarks = bookmarks.map((bookmark) =>
+      sanitizeBookmarkData({
+        ...bookmark,
+        user_id: userId,
+      }),
+    );
+
+    Logger.debug(
+      "BookmarkService",
+      "Sample bookmarks to insert",
+      sanitizedBookmarks.slice(0, 3),
+    );
 
     const { data, error } = await supabase
-      .from('bookmarks')
+      .from("bookmarks")
       .insert(sanitizedBookmarks)
       .select();
 
     if (error) {
-      Logger.error('BookmarkService', 'Failed to bulk insert bookmarks', {
+      Logger.error("BookmarkService", "Failed to bulk insert bookmarks", {
         error,
         code: error.code,
         message: error.message,
         details: error.details,
-        hint: error.hint
+        hint: error.hint,
       });
-      
+
       throw new Error(`Failed to bulk insert bookmarks: ${error.message}`);
     }
 
-    Logger.info('BookmarkService', `Successfully inserted ${data?.length || 0} bookmarks`);
+    Logger.info(
+      "BookmarkService",
+      `Successfully inserted ${data?.length || 0} bookmarks`,
+    );
     return data || [];
   }
 
   static async removeBookmarksByChromeIds(
     chromeBookmarkIds: string[],
-    userId: string
+    userId: string,
   ): Promise<void> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
     if (chromeBookmarkIds.length === 0) {
-      Logger.info('BookmarkService', 'No bookmarks to remove');
+      Logger.info("BookmarkService", "No bookmarks to remove");
       return;
     }
 
-    Logger.info('BookmarkService', `Removing ${chromeBookmarkIds.length} bookmarks by Chrome IDs for user: ${userId}`);
-    Logger.debug('BookmarkService', 'Chrome IDs to remove', chromeBookmarkIds);
+    Logger.info(
+      "BookmarkService",
+      `Removing ${chromeBookmarkIds.length} bookmarks by Chrome IDs for user: ${userId}`,
+    );
+    Logger.debug("BookmarkService", "Chrome IDs to remove", chromeBookmarkIds);
 
     const { error } = await supabase
-      .from('bookmarks')
+      .from("bookmarks")
       .delete()
-      .in('chrome_bookmark_id', chromeBookmarkIds)
-      .eq('user_id', userId);
+      .in("chrome_bookmark_id", chromeBookmarkIds)
+      .eq("user_id", userId);
 
     if (error) {
-      Logger.error('BookmarkService', 'Failed to remove bookmarks', error);
+      Logger.error("BookmarkService", "Failed to remove bookmarks", error);
       throw new Error(`Failed to remove bookmarks: ${error.message}`);
     }
 
-    Logger.info('BookmarkService', 'Bookmarks removed successfully');
+    Logger.info("BookmarkService", "Bookmarks removed successfully");
   }
 
-  static async testConnection(userId: string): Promise<{ success: boolean; message: string; debug?: any }> {
+  static async testConnection(
+    userId: string,
+  ): Promise<{ success: boolean; message: string; debug?: any }> {
     try {
-      Logger.info('BookmarkService', `Testing database connection for user: ${userId}`);
-      
+      Logger.info(
+        "BookmarkService",
+        `Testing database connection for user: ${userId}`,
+      );
+
       // Test basic Supabase connection
       const { error: pingError } = await supabase
-        .from('bookmarks')
-        .select('count', { count: 'exact', head: true })
+        .from("bookmarks")
+        .select("count", { count: "exact", head: true })
         .limit(0);
-      
+
       if (pingError) {
         return {
           success: false,
-          message: `Database ping failed: ${pingError.message}`
+          message: `Database ping failed: ${pingError.message}`,
         };
       }
-      
-      Logger.info('BookmarkService', 'Database ping successful');
-      
+
+      Logger.info("BookmarkService", "Database ping successful");
+
       // Test user-specific query
       const { data, error } = await supabase
-        .from('bookmarks')
-        .select('count', { count: 'exact', head: true })
-        .eq('user_id', userId);
-      
+        .from("bookmarks")
+        .select("count", { count: "exact", head: true })
+        .eq("user_id", userId);
+
       if (error) {
         return {
           success: false,
-          message: `User query failed: ${error.message}`
+          message: `User query failed: ${error.message}`,
         };
       }
-      
+
       const debug = await this.debugUserContext();
-      
+
       return {
         success: true,
         message: `Database connection successful. Found bookmarks for user ${userId}`,
-        debug
+        debug,
       };
-      
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
+      const message = err instanceof Error ? err.message : "Unknown error";
       return {
         success: false,
-        message: `Connection test failed: ${message}`
+        message: `Connection test failed: ${message}`,
       };
     }
   }
@@ -374,10 +429,10 @@ export class BookmarkService {
   static async testBasicConnection(): Promise<boolean> {
     try {
       const { error } = await supabase
-        .from('bookmarks')
-        .select('count', { count: 'exact', head: true })
+        .from("bookmarks")
+        .select("count", { count: "exact", head: true })
         .limit(0);
-      
+
       return !error;
     } catch {
       return false;
@@ -387,17 +442,17 @@ export class BookmarkService {
   static async getAllBookmarksCount(): Promise<number> {
     try {
       const { count, error } = await supabase
-        .from('bookmarks')
-        .select('*', { count: 'exact', head: true });
-      
+        .from("bookmarks")
+        .select("*", { count: "exact", head: true });
+
       if (error) {
-        Logger.error('BookmarkService', 'Failed to get bookmarks count', error);
+        Logger.error("BookmarkService", "Failed to get bookmarks count", error);
         return 0;
       }
-      
+
       return count || 0;
     } catch (err) {
-      Logger.error('BookmarkService', 'Error getting bookmarks count', err);
+      Logger.error("BookmarkService", "Error getting bookmarks count", err);
       return 0;
     }
   }
@@ -409,40 +464,41 @@ export class BookmarkService {
     needsEmbeddings: number;
   }> {
     if (!validateUserId(userId)) {
-      throw new Error('Invalid user ID');
+      throw new Error("Invalid user ID");
     }
 
     try {
       // Get all bookmarks for the user
       const { data: allBookmarks, error: allError } = await supabase
-        .from('bookmarks')
-        .select('id, title_embedding')
-        .eq('user_id', userId);
+        .from("bookmarks")
+        .select("id, title_embedding")
+        .eq("user_id", userId);
 
       if (allError) {
         throw new Error(`Failed to fetch bookmarks: ${allError.message}`);
       }
 
       const totalBookmarks = allBookmarks?.length || 0;
-      
+
       // Count bookmarks with embeddings (non-null title_embedding)
-      const bookmarksWithEmbeddings = allBookmarks?.filter(b => b.title_embedding !== null).length || 0;
-      
+      const bookmarksWithEmbeddings =
+        allBookmarks?.filter((b) => b.title_embedding !== null).length || 0;
+
       const needsEmbeddings = totalBookmarks - bookmarksWithEmbeddings;
 
-      Logger.info('BookmarkService', `Embedding stats for user ${userId}:`, {
+      Logger.info("BookmarkService", `Embedding stats for user ${userId}:`, {
         totalBookmarks,
         bookmarksWithEmbeddings,
-        needsEmbeddings
+        needsEmbeddings,
       });
 
       return {
         totalBookmarks,
         bookmarksWithEmbeddings,
-        needsEmbeddings
+        needsEmbeddings,
       };
     } catch (err) {
-      Logger.error('BookmarkService', 'Failed to get embedding stats', err);
+      Logger.error("BookmarkService", "Failed to get embedding stats", err);
       throw err;
     }
   }
