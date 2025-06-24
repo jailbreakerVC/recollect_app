@@ -261,7 +261,7 @@ class PopupManager {
 
     // Update title based on search type
     const searchTypeLabels = {
-      keyword: "🔍 Keyword Search Results",
+      keyword: "Keyword Search Results",
       context: "🤖 Related Bookmarks Found",
       manual: "📋 Search Results",
     };
