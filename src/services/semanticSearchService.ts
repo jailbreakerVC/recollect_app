@@ -44,59 +44,101 @@ export class SemanticSearchService {
     });
 
     try {
-      // Generate vector embedding for the search context
-      const context = [
-        pageContext.title,
-        pageContext.description,
-        ...pageContext.keywords
-      ].filter(Boolean).join(' ');
+      // Break down search terms into components
+      const searchComponents = [
+        ...pageContext.title.split(' ').filter(word => word.length > 1),
+        ...(pageContext.description ? pageContext.description.split(' ').filter(word => word.length > 1) : [])
+      ];
 
-      const queryEmbedding = await OpenAIService.generateQueryEmbedding(context);
+      // Generate embeddings for each component
+      const componentEmbeddings = await Promise.all(
+        searchComponents.map(async (component) => {
+          try {
+            return await OpenAIService.generateEmbedding(component);
+          } catch (error) {
+            Logger.error('SemanticSearchService', 'Failed to generate embedding for component', {
+              component,
+              error
+            });
+            return null;
+          }
+        })
+      );
 
-      // First try vector search with a reasonable threshold
-      const { data: vectorResults, error: vectorError } = await supabase.rpc('search_bookmarks_vector', {
-        query_embedding: queryEmbedding,
-        user_id_param: userId,
-        max_results: maxResults,
-        min_similarity: 0.15  // Start with a moderate threshold
-      });
+      // Filter out any failed embeddings
+      const validEmbeddings = componentEmbeddings.filter((emb): emb is number[] => emb !== null);
+
+      // If we have valid embeddings, perform vector search
+      if (validEmbeddings.length === 0) {
+        throw new Error('Failed to generate any valid embeddings');
+      }
+
+      // Combine embeddings using element-wise average
+      const combinedEmbedding = validEmbeddings.reduce((acc, curr) => 
+        acc.map((val, i) => val + curr[i])
+      ).map(val => val / validEmbeddings.length);
+
+      // Use the combined embedding for search
+      const queryEmbedding = combinedEmbedding;
+
+      // Perform vector search
+      const { data: bookmarks, error } = await supabase
+        .rpc('search_bookmarks_vector', {
+          query_embedding: queryEmbedding,
+          user_id_param: userId,
+          similarity_threshold: similarityThreshold,
+          max_results: maxResults
+        });
 
       // If we got no results or very few results, try with a lower threshold
-      if (!vectorResults || vectorResults.length < 3) {
+      if (!bookmarks || bookmarks.length < 3) {
         const { data: moreResults, error: moreError } = await supabase.rpc('search_bookmarks_vector', {
           query_embedding: queryEmbedding,
           user_id_param: userId,
-          max_results: maxResults,
-          min_similarity: 0.05  // Lower threshold for more results
+          similarity_threshold: 0.1,  // Lower threshold for more results
+          max_results: maxResults
         });
-        
-        if (!moreError && moreResults) {
-          vectorResults = moreResults;
+
+        if (moreResults && moreResults.length > 0) {
+          return moreResults.map((result: any) => ({
+            ...result,
+            search_type: 'semantic',
+            similarity_score: result.similarity_score,
+          }));
         }
       }
 
       // If we still have no results, fall back to keyword search
-      if (!vectorResults || vectorResults.length === 0) {
+      if (!bookmarks || bookmarks.length === 0) {
         const { data: keywordResults, error: keywordError } = await supabase.rpc('search_bookmarks_keywords', {
-          search_query: context,
+          search_query: pageContext.title || '',
           user_id_param: userId,
           max_results: maxResults
         });
 
         if (!keywordError && keywordResults) {
-          return keywordResults;
+          return keywordResults.map((result: any) => ({
+            ...result,
+            search_type: 'trigram'
+          }));
         }
       }
 
-      // Return vector search results if we got any
-      return vectorResults || [];
-
       if (error) {
-        Logger.error('SemanticSearchService', 'Vector search failed', error);
-        throw new Error(`Vector search failed: ${error.message}`);
+        Logger.error('SemanticSearchService', 'Vector search failed', {
+          error: error || 'Unknown error',
+          userId,
+          maxResults,
+          similarityThreshold
+        });
+        throw error;
       }
 
-      // Filter out the current page if it exists in bookmarks
+      return bookmarks.map((result: any) => ({
+        ...result,
+        search_type: 'semantic'
+      }));
+
       const filteredResults = includeUrl 
         ? data 
         : data.filter(bookmark => !this.isSameUrl(bookmark.url, pageContext.url));

@@ -31,7 +31,11 @@ const Header: React.FC = () => {
           href="#"
           className="flex items-center gap-2 text-white font-brand font-semibold text-2xl"
         >
-        <img src="public/Recollect_logo.png" alt="Bookmark icon" className="h-10 w-10 invert" />
+          <img
+            src="public/Recollect_logo.png"
+            alt="Bookmark icon"
+            className="h-10 w-10 invert"
+          />
 
           <span>Recollect</span>
         </a>
@@ -57,7 +61,7 @@ const Header: React.FC = () => {
             FAQ
           </a>
           <a
-            href="#download"
+            href="https://github.com/jailbreakerVC/recollect_app/blob/main/installation.md"
             className="glass-button bg-white/10 text-white hover:bg-white/20"
           >
             Install Extension
