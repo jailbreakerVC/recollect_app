@@ -4,7 +4,7 @@
 
 Recollect is a sophisticated bookmark management system that combines the power of Chrome extensions with semantic search. Never lose track of that important article, tutorial, or resource again.
 
-![Recollect Banner](static/Recollect_logo.png)
+![Recollect Banner](static/recollect_banner.png)
 
 ## ✨ Features
 
@@ -25,10 +25,10 @@ Recollect is a sophisticated bookmark management system that combines the power 
 ## 🛠️ Technology Stack
 
 ### **Frontend**
-- **React 18** 
-- **Tailwind CSS** 
-- **Vite** 
-- **Lucide React** 
+- **React 18**
+- **Tailwind CSS**
+- **Vite**
+- **Lucide React**
 
 ### **Backend & Database**
 - **Supabase** for PostgreSQL database with real-time capabilities
@@ -36,15 +36,15 @@ Recollect is a sophisticated bookmark management system that combines the power 
 
 ### **Chrome Extension**
 - **Manifest V3**
-- **Content Scripts** 
-- **Background Service Worker** 
+- **Content Scripts**
+- **Background Service Worker**
 
 ### **Authentication**
-- **Google OAuth 2.0** 
+- **Google OAuth 2.0**
 
 ### **AI & Search**
-- **OpenAI Embeddings** 
-- **Vector similarity search** 
+- **OpenAI Embeddings**
+- **Vector similarity search**
 
 ## 🚀 Quick Start
 
@@ -52,7 +52,7 @@ Recollect is a sophisticated bookmark management system that combines the power 
 - Node.js 18+ and npm
 - Chrome browser
 - Supabase account
-- OpenAI API key 
+- OpenAI API key
 
 ### Installation
 
