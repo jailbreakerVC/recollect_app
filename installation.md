@@ -14,27 +14,27 @@ This guide will walk you through installing the Recollect Chrome extension from 
 
 ### Step 1: Download the Extension
 
-1. Go to the [Recollect GitHub Releases page](https://github.com/your-username/recollect/releases)
+1. Go to the [Recollect GitHub Releases page](https://github.com/jailbreakerVC/recollect_app/releases)
 2. Find the latest release version
-3. Download the `recollect-extension.zip` file from the Assets section
+3. Download the `public.zip` file from the Assets section
 4. Save the ZIP file to a location you can easily find (e.g., Downloads folder)
 
 ### Step 2: Extract the Extension Files
 
 1. **Windows:**
-   - Right-click on the downloaded `recollect-extension.zip` file
+   - Right-click on the downloaded `public.zip` file
    - Select "Extract All..." from the context menu
-   - Choose a destination folder (e.g., `C:\Users\YourName\Documents\RecollectExtension`)
+   - Choose a destination folder (e.g., `C:\Users\YourName\Documents\public`)
    - Click "Extract"
 
 2. **macOS:**
-   - Double-click the `recollect-extension.zip` file
+   - Double-click the `public.zip` file
    - The files will automatically extract to a folder in the same location
-   - Move the extracted folder to a permanent location (e.g., `~/Documents/RecollectExtension`)
+   - Move the extracted folder to a permanent location (e.g., `~/Documents/public`)
 
 3. **Linux:**
    - Open terminal and navigate to the download location
-   - Run: `unzip recollect-extension.zip -d ~/Documents/RecollectExtension`
+   - Run: `unzip public.zip -d ~/Documents/public`
    - Or use your file manager's built-in extraction tool
 
 ### Step 3: Enable Developer Mode in Chrome
@@ -49,7 +49,7 @@ This guide will walk you through installing the Recollect Chrome extension from 
 ### Step 4: Load the Extension
 
 1. On the Extensions page (with Developer mode enabled), click **Load unpacked**
-2. Navigate to the folder where you extracted the extension files
+2. Navigate to the extracted public folder
 3. Select the folder containing the extension files (it should contain `manifest.json`)
 4. Click **Select Folder** (Windows) or **Open** (macOS/Linux)
 5. The Recollect extension should now appear in your extensions list
@@ -64,7 +64,7 @@ This guide will walk you through installing the Recollect Chrome extension from 
 
 ### Step 6: Connect to Web Application
 
-1. Open the Recollect web application at `http://localhost:5173` (development) or your deployed URL
+1. Open the Recollect web application at `http://localhost:5173` (development) or https://recollect-eight.vercel.app/
 2. Sign in with your Google account
 3. The extension should automatically detect the web app and show "Connected" status
 4. You can now sync your Chrome bookmarks with the web application
@@ -82,7 +82,7 @@ This guide will walk you through installing the Recollect Chrome extension from 
 ### Extension Icon Not Visible
 
 **Problem:** Can't find the Recollect icon in the toolbar
-- **Solution:** 
+- **Solution:**
   1. Click the puzzle piece icon (🧩) in Chrome toolbar
   2. Find "Recollect" and click the pin icon
   3. The icon should now appear in your toolbar
@@ -99,7 +99,7 @@ This guide will walk you through installing the Recollect Chrome extension from 
 ### Permission Errors
 
 **Problem:** Extension requests permissions or shows security warnings
-- **Solution:** 
+- **Solution:**
   1. Review the requested permissions carefully
   2. Click "Allow" for necessary permissions (bookmarks, storage, tabs)
   3. These permissions are required for the extension to function properly
