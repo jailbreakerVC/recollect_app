@@ -17,23 +17,23 @@ const Footer: React.FC = () => {
 
             <div className="flex gap-4">
               <a
-                href="https://github.com/JailbreakerVC"
+                href="https://github.com/jailbreakerVC/recollect_app"
                 className="text-white/70 hover:text-white transition-colors"
               >
                 <Github className="h-5 w-5" />
               </a>
               <a
-                href="#"
+                href="https://x.com/jailbreak_er"
                 className="text-white/70 hover:text-white transition-colors"
               >
                 <Twitter className="h-5 w-5" />
               </a>
-              <a
+              {/* <a
                 href="#"
                 className="text-white/70 hover:text-white transition-colors"
               >
                 <Mail className="h-5 w-5" />
-              </a>
+              </a> */}
             </div>
           </div>
 
