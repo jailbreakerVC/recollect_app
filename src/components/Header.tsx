@@ -32,7 +32,7 @@ const Header: React.FC = () => {
           className="flex items-center gap-2 text-white font-brand font-semibold text-2xl"
         >
           <img
-            src="static/Recollect_logo.png"
+            src="/Recollect_logo.png"
             alt="Bookmark icon"
             className="h-10 w-10 invert"
           />

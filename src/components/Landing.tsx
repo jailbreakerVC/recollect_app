@@ -95,7 +95,7 @@ function Landing() {
       <div className="fixed h-24 w-24 bottom-10 right-10 z-50">
         <a href="https://bolt.new/">
         <img 
-          src="static/white_circle_360x360.png" 
+          src="/white_circle_360x360.png" 
           alt="Recollect Logo" 
           className="h-24 w-24"
         />
