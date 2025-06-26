@@ -78,7 +78,7 @@ function Landing() {
     }
   }, [login]);
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
       <Header />
       <main>
         <Hero />
@@ -91,7 +91,16 @@ function Landing() {
         Made with <span className="text-red-500">{' <3 '}</span> by
         Jailbreaker 
       </div>
-      <Footer />
+      <Footer />  
+      <div className="fixed h-24 w-24 bottom-10 right-10 z-50">
+        <a href="https://bolt.new/">
+        <img 
+          src="static/white_circle_360x360.png" 
+          alt="Recollect Logo" 
+          className="h-24 w-24"
+        />
+        </a>
+      </div>
     </div>
   );
 }
