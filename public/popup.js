@@ -656,7 +656,7 @@ class PopupManager {
   }
 
   openWebApp() {
-    const urls = ["http://localhost:5173", "http://localhost:3000"];
+    const urls = ["https://recollect-bolt.netlify.app/"];
 
     chrome.tabs.create({ url: urls[0] }, (tab) => {
       if (chrome.runtime.lastError) {
