@@ -761,7 +761,7 @@ const BookmarkManager: React.FC = () => {
               <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-0 rounded-lg">
                 {/* <Bookmark className="w-8 h-8 text-white" /> */}
                 <img
-                  src="static/Recollect_logo.png"
+                  src="/Recollect_logo.png"
                   alt="Bookmark icon"
                   className="h-12 w-12 invert"
                 />
