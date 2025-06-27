@@ -293,45 +293,45 @@ class BackgroundManager {
     const config = this.pageAnalysisConfig;
     const currentDomain = context.domain;
 
-    return results
-      .filter((result) => {
-        // Filter by similarity score threshold
-        if ((result.similarity_score || 0) < config.minSimilarityScore) {
-          return false;
-        }
+    return results;
+    // .filter((result) => {
+    //   // Filter by similarity score threshold
+    //   if ((result.similarity_score || 0) < config.minSimilarityScore) {
+    //     return false;
+    //   }
 
-        // Don't show bookmarks from the same domain (user is already there)
-        try {
-          const resultDomain = new URL(result.url).hostname.replace(
-            /^www\./,
-            "",
-          );
-          if (resultDomain === currentDomain) {
-            return false;
-          }
-        } catch {
-          // Keep if we can't parse URL
-        }
+    // Don't show bookmarks from the same domain (user is already there)
+    // try {
+    //   const resultDomain = new URL(result.url).hostname.replace(
+    //     /^www\./,
+    //     "",
+    //   );
+    //   if (resultDomain === currentDomain) {
+    //     return false;
+    //   }
+    // } catch {
+    // Keep if we can't parse URL
+    //}
 
-        // Prefer bookmarks with actual content matches, not just domain similarity
-        if (
-          result.search_type === "semantic" &&
-          result.similarity_score > 0.8
-        ) {
-          return true;
-        }
+    // Prefer bookmarks with actual content matches, not just domain similarity
+    // if (
+    //   result.search_type === "semantic" &&
+    //   result.similarity_score > 0.8
+    // ) {
+    //   return true;
+    // }
 
-        if (
-          result.search_type === "trigram" &&
-          result.similarity_score > 0.75
-        ) {
-          return true;
-        }
+    // if (
+    //   result.search_type === "trigram" &&
+    //   result.similarity_score > 0.75
+    // ) {
+    //   return true;
+    // }
 
-        return false;
-      })
-      .sort((a, b) => (b.similarity_score || 0) - (a.similarity_score || 0))
-      .slice(0, config.maxResults);
+    //   return false;
+    // })
+    // .sort((a, b) => (b.similarity_score || 0) - (a.similarity_score || 0))
+    // .slice(0, config.maxResults);
   }
 
   async extractPageContext(tabId, tab) {
