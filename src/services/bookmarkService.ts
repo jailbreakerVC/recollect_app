@@ -163,6 +163,42 @@ export class BookmarkService {
     });
 
     try {
+      // Check for existing bookmark with the same title or URL for this user
+      const { data: existingBookmarks, error: checkError } = await supabase
+        .from("bookmarks")
+        .select("id, title, url")
+        .eq("user_id", userId)
+        .or(`title.eq.${title},url.eq.${url}`);
+
+      if (checkError) {
+        Logger.error("BookmarkService", "Error checking for existing bookmarks", checkError);
+        throw new Error("Failed to check for existing bookmarks");
+      }
+
+      // Check if there's an exact match (same title and URL)
+      const exactMatch = existingBookmarks?.find(
+        (b) => b.title === title && b.url === url
+      );
+
+      if (exactMatch) {
+        Logger.info("BookmarkService", `Bookmark already exists - ID: ${exactMatch.id}, Title: ${title}, URL: ${url}`);
+        throw new Error("A bookmark with this title and URL already exists");
+      }
+
+      // Check for title collision
+      const titleCollision = existingBookmarks?.find((b) => b.title === title);
+      if (titleCollision) {
+        Logger.warn("BookmarkService", `Bookmark title already exists - ID: ${titleCollision.id}, Title: ${title}`);
+        throw new Error("A bookmark with this title already exists");
+      }
+
+      // Check for URL collision
+      const urlCollision = existingBookmarks?.find((b) => b.url === url);
+      if (urlCollision) {
+        Logger.warn("BookmarkService", `Bookmark URL already exists - ID: ${urlCollision.id}, URL: ${url}`);
+        throw new Error("A bookmark with this URL already exists");
+      }
+
       // Generate embedding for the bookmark title
       const embedding = await OpenAIService.generateEmbedding(title);
 
