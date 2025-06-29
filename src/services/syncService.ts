@@ -72,7 +72,7 @@ export class SyncService {
       throw new Error('Invalid user ID');
     }
 
-    Logger.info('SyncService', `Starting sync for user: ${userId}`);
+    Logger.info('SyncService', `Starting sync with duplicate prevention for user: ${userId}`);
     
     if (!extensionService.isExtensionAvailable()) {
       throw new Error('Chrome extension not available');
@@ -123,14 +123,14 @@ export class SyncService {
       throw new Error(`Failed to fetch database bookmarks: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    onProgress?.('Analyzing differences...');
+    onProgress?.('Analyzing differences with duplicate detection...');
 
-    const analysis = this.analyzeBookmarkDifferences(extensionBookmarks, databaseBookmarks);
+    const analysis = this.analyzeBookmarkDifferencesWithDuplicateDetection(extensionBookmarks, databaseBookmarks);
     
-    Logger.info('SyncService', 'Sync analysis', analysis);
+    Logger.info('SyncService', 'Sync analysis with duplicate prevention', analysis);
 
     // If no changes needed, return early
-    if (analysis.toInsert.length === 0 && analysis.toUpdate.length === 0 && analysis.toRemove.length === 0) {
+    if (analysis.toUpsert.length === 0 && analysis.toRemove.length === 0) {
       Logger.info('SyncService', 'No changes needed - bookmarks are already in sync');
       onProgress?.('No changes needed - already in sync');
       
@@ -143,8 +143,8 @@ export class SyncService {
       };
     }
 
-    // Execute sync operations
-    const result = await this.executeSyncOperations(
+    // Execute sync operations with duplicate prevention
+    const result = await this.executeSyncOperationsWithDuplicateDetection(
       userId,
       analysis,
       extensionBookmarks.length,
@@ -156,53 +156,82 @@ export class SyncService {
     
     onProgress?.('Sync completed successfully');
 
-    Logger.info('SyncService', 'Sync completed', result);
+    Logger.info('SyncService', 'Sync completed with duplicate prevention', result);
     return result;
   }
 
-  private static analyzeBookmarkDifferences(
+  private static analyzeBookmarkDifferencesWithDuplicateDetection(
     extensionBookmarks: ExtensionBookmark[],
     databaseBookmarks: DatabaseBookmark[]
   ) {
+    // Create maps for efficient lookup
     const dbBookmarkMap = new Map(
       databaseBookmarks
         .filter(b => b.chrome_bookmark_id)
         .map(b => [b.chrome_bookmark_id!, b])
     );
 
-    const extensionBookmarkMap = new Map(
-      extensionBookmarks.map(b => [b.id, b])
+    // Create maps for title and URL based lookup to detect duplicates
+    const dbTitleMap = new Map(
+      databaseBookmarks.map(b => [b.title.toLowerCase().trim(), b])
     );
 
-    Logger.info('SyncService', 'Analysis', {
+    const dbUrlMap = new Map(
+      databaseBookmarks.map(b => [b.url.toLowerCase().trim(), b])
+    );
+
+    Logger.info('SyncService', 'Analysis with duplicate detection', {
       extensionBookmarks: extensionBookmarks.length,
       databaseBookmarks: databaseBookmarks.length,
       dbBookmarksWithChromeId: dbBookmarkMap.size,
-      extensionBookmarksMapped: extensionBookmarkMap.size
+      dbTitleMap: dbTitleMap.size,
+      dbUrlMap: dbUrlMap.size
     });
 
-    const toInsert: Partial<DatabaseBookmark>[] = [];
-    const toUpdate: { id: string; updates: Partial<DatabaseBookmark> }[] = [];
+    const toUpsert: Array<Partial<DatabaseBookmark> & { operation: 'insert' | 'update' }> = [];
 
     for (const extBookmark of extensionBookmarks) {
-      const existingBookmark = dbBookmarkMap.get(extBookmark.id);
-
-      if (existingBookmark) {
-        if (this.needsUpdate(existingBookmark, extBookmark)) {
-          Logger.debug('SyncService', `Bookmark needs update: ${extBookmark.title}`);
-          toUpdate.push({
-            id: existingBookmark.id,
-            updates: {
-              title: extBookmark.title,
-              url: extBookmark.url,
-              folder: extBookmark.folder,
-              parent_id: extBookmark.parentId,
-            }
+      // First check by Chrome ID (most specific)
+      const existingByChrome = dbBookmarkMap.get(extBookmark.id);
+      
+      if (existingByChrome) {
+        // Bookmark exists by Chrome ID, check if it needs updating
+        if (this.needsUpdate(existingByChrome, extBookmark)) {
+          Logger.debug('SyncService', `Bookmark needs update by Chrome ID: ${extBookmark.title}`);
+          toUpsert.push({
+            operation: 'update',
+            chrome_bookmark_id: extBookmark.id,
+            title: extBookmark.title,
+            url: extBookmark.url,
+            folder: extBookmark.folder,
+            parent_id: extBookmark.parentId,
           });
         }
+        continue;
+      }
+
+      // Check for duplicates by title or URL
+      const existingByTitle = dbTitleMap.get(extBookmark.title.toLowerCase().trim());
+      const existingByUrl = dbUrlMap.get(extBookmark.url.toLowerCase().trim());
+
+      if (existingByTitle || existingByUrl) {
+        // Found a duplicate, update the existing bookmark with Chrome ID
+        const existingBookmark = existingByTitle || existingByUrl;
+        Logger.debug('SyncService', `Found duplicate bookmark, will update: ${extBookmark.title}`);
+        
+        toUpsert.push({
+          operation: 'update',
+          chrome_bookmark_id: extBookmark.id,
+          title: extBookmark.title,
+          url: extBookmark.url,
+          folder: extBookmark.folder,
+          parent_id: extBookmark.parentId,
+        });
       } else {
+        // No duplicate found, insert new bookmark
         Logger.debug('SyncService', `New bookmark to insert: ${extBookmark.title}`);
-        toInsert.push({
+        toUpsert.push({
+          operation: 'insert',
           chrome_bookmark_id: extBookmark.id,
           title: extBookmark.title,
           url: extBookmark.url,
@@ -213,23 +242,25 @@ export class SyncService {
       }
     }
 
+    // Find bookmarks to remove (exist in DB with Chrome ID but not in extension)
     const extensionBookmarkIds = new Set(extensionBookmarks.map(b => b.id));
     const toRemove = databaseBookmarks
       .filter(b => b.chrome_bookmark_id && !extensionBookmarkIds.has(b.chrome_bookmark_id))
       .map(b => b.chrome_bookmark_id!);
 
-    Logger.info('SyncService', 'Operations planned', {
-      insert: toInsert.length,
-      update: toUpdate.length,
-      remove: toRemove.length
+    Logger.info('SyncService', 'Operations planned with duplicate detection', {
+      upsert: toUpsert.length,
+      remove: toRemove.length,
+      insertOperations: toUpsert.filter(op => op.operation === 'insert').length,
+      updateOperations: toUpsert.filter(op => op.operation === 'update').length,
     });
 
-    return { toInsert, toUpdate, toRemove };
+    return { toUpsert, toRemove };
   }
 
-  private static async executeSyncOperations(
+  private static async executeSyncOperationsWithDuplicateDetection(
     userId: string,
-    analysis: { toInsert: Partial<DatabaseBookmark>[]; toUpdate: any[]; toRemove: string[] },
+    analysis: { toUpsert: Array<Partial<DatabaseBookmark> & { operation: 'insert' | 'update' }>; toRemove: string[] },
     totalBookmarks: number,
     onProgress?: (status: string) => void
   ): Promise<SyncResult> {
@@ -238,31 +269,36 @@ export class SyncService {
     let removedCount = 0;
 
     try {
-      // Insert new bookmarks
-      if (analysis.toInsert.length > 0) {
-        onProgress?.(`Adding ${analysis.toInsert.length} new bookmarks...`);
-        Logger.info('SyncService', `Inserting bookmarks: ${analysis.toInsert.length}`);
-        Logger.debug('SyncService', 'Sample bookmarks to insert', analysis.toInsert.slice(0, 2));
+      // Process upsert operations (both inserts and updates)
+      if (analysis.toUpsert.length > 0) {
+        onProgress?.(`Processing ${analysis.toUpsert.length} bookmark changes...`);
+        Logger.info('SyncService', `Processing upsert operations: ${analysis.toUpsert.length}`);
         
-        const inserted = await BookmarkService.bulkInsertBookmarks(userId, analysis.toInsert);
-        insertedCount = inserted.length;
-        Logger.info('SyncService', `Successfully inserted ${insertedCount} bookmarks`);
-      }
-
-      // Update existing bookmarks
-      if (analysis.toUpdate.length > 0) {
-        onProgress?.(`Updating ${analysis.toUpdate.length} bookmarks...`);
-        Logger.info('SyncService', `Updating bookmarks: ${analysis.toUpdate.length}`);
-        
-        for (const { id, updates } of analysis.toUpdate) {
+        for (const bookmarkData of analysis.toUpsert) {
           try {
-            await BookmarkService.updateBookmark(id, userId, updates);
-            updatedCount++;
+            const result = await BookmarkService.addBookmark(
+              userId,
+              bookmarkData.title!,
+              bookmarkData.url!,
+              bookmarkData.folder,
+              bookmarkData.chrome_bookmark_id
+            );
+            
+            // The addBookmark method now uses upsert, so we need to check what actually happened
+            // For now, we'll count based on the operation type we determined
+            if (bookmarkData.operation === 'insert') {
+              insertedCount++;
+            } else {
+              updatedCount++;
+            }
+            
           } catch (error) {
-            Logger.error('SyncService', `Failed to update bookmark ${id}`, error);
+            Logger.error('SyncService', `Failed to upsert bookmark ${bookmarkData.title}`, error);
+            // Continue with other bookmarks even if one fails
           }
         }
-        Logger.info('SyncService', `Successfully updated ${updatedCount} bookmarks`);
+        
+        Logger.info('SyncService', `Successfully processed ${insertedCount + updatedCount} bookmark operations`);
       }
 
       // Remove deleted bookmarks
@@ -324,7 +360,25 @@ export class SyncService {
       throw new Error('Invalid bookmark data');
     }
 
-    Logger.info('SyncService', 'Adding bookmark everywhere', { userId, title, url, folder });
+    Logger.info('SyncService', 'Adding bookmark everywhere with duplicate prevention', { userId, title, url, folder });
+    
+    // Check if bookmark already exists
+    const existingCheck = await BookmarkService.checkBookmarkExists(userId, title, url);
+    
+    if (existingCheck.exists) {
+      Logger.info('SyncService', 'Bookmark already exists, returning existing bookmark', {
+        existingId: existingCheck.bookmarkId,
+        existingTitle: existingCheck.existingTitle
+      });
+      
+      // Return the existing bookmark
+      const existingBookmarks = await BookmarkService.getBookmarks(userId);
+      const existingBookmark = existingBookmarks.find(b => b.id === existingCheck.bookmarkId);
+      
+      if (existingBookmark) {
+        return existingBookmark;
+      }
+    }
     
     const bookmark = await BookmarkService.addBookmark(userId, title, url, folder);
 
