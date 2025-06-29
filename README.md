@@ -1,5 +1,7 @@
 # 🔖 Recollect
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/cc4f309a-3392-426b-ae4a-34b57d103744/deploy-status)](https://app.netlify.com/projects/recollect-bolt/deploys)
+
 > **Transform your bookmarks into an intelligent discovery engine**
 
 Recollect is a sophisticated bookmark management system that combines the power of Chrome extensions with semantic search. Never lose track of that important article, tutorial, or resource again.
