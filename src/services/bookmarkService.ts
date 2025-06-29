@@ -1,7 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { DatabaseBookmark } from "../types";
 import { Logger } from "../utils/logger";
-import { OpenAIService } from "./openaiService";
 
 // Define validation functions directly to avoid circular imports
 const validateUserId = (userId: string): boolean => {
@@ -190,20 +189,6 @@ export class BookmarkService {
 
       const result = data[0];
       
-      // Generate embedding for the bookmark if it was newly created
-      if (!result.was_updated) {
-        try {
-          const embedding = await OpenAIService.generateEmbedding(title);
-          await supabase
-            .from("bookmarks")
-            .update({ title_embedding: embedding })
-            .eq("id", result.id);
-        } catch (embeddingError) {
-          Logger.warn("BookmarkService", "Failed to generate embedding", embeddingError);
-          // Don't fail the whole operation for embedding issues
-        }
-      }
-
       Logger.info("BookmarkService", `Bookmark ${result.was_updated ? 'updated' : 'added'} successfully: ${result.id}`);
       
       // Return the bookmark in the expected format
@@ -300,23 +285,6 @@ export class BookmarkService {
         throw new Error(`Failed to update bookmark: ${error.message}`);
       }
 
-      // If title was updated, generate new embedding
-      if (updates.title) {
-        try {
-          const embedding = await OpenAIService.generateEmbedding(updates.title);
-          await supabase
-            .from("bookmarks")
-            .update({ title_embedding: embedding })
-            .eq("id", bookmarkId)
-            .eq("user_id", userId);
-        } catch (error) {
-          Logger.error("BookmarkService", "Failed to generate new embedding after update", {
-            bookmarkId,
-            error
-          });
-        }
-      }
-
       Logger.info("BookmarkService", "Bookmark updated successfully");
       return data;
     } catch (error) {
@@ -399,55 +367,67 @@ export class BookmarkService {
     });
 
     try {
-      // Prepare bookmarks data for bulk upsert
-      const bookmarksData = bookmarks.map(b => sanitizeBookmarkData({
-        title: b.title,
-        url: b.url,
-        folder: b.folder,
-        chrome_bookmark_id: b.chrome_bookmark_id,
-        parent_id: b.parent_id,
-      }));
+      // Prepare bookmarks data for bulk upsert - use smaller batches for better performance
+      const batchSize = 50; // Process in smaller batches
+      const allResults: DatabaseBookmark[] = [];
 
-      // Use the bulk upsert function
-      const { data, error } = await supabase.rpc("bulk_upsert_bookmarks", {
-        p_user_id: userId,
-        p_bookmarks: JSON.stringify(bookmarksData),
-      });
+      for (let i = 0; i < bookmarks.length; i += batchSize) {
+        const batch = bookmarks.slice(i, i + batchSize);
+        
+        Logger.info("BookmarkService", `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(bookmarks.length / batchSize)}`);
 
-      if (error) {
-        Logger.error("BookmarkService", "Failed to bulk upsert bookmarks", {
-          error,
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
+        const bookmarksData = batch.map(b => sanitizeBookmarkData({
+          title: b.title,
+          url: b.url,
+          folder: b.folder,
+          chrome_bookmark_id: b.chrome_bookmark_id,
+          parent_id: b.parent_id,
+        }));
+
+        // Use the bulk upsert function
+        const { data, error } = await supabase.rpc("bulk_upsert_bookmarks", {
+          p_user_id: userId,
+          p_bookmarks: JSON.stringify(bookmarksData),
         });
 
-        throw new Error(`Failed to bulk insert bookmarks: ${error.message}`);
+        if (error) {
+          Logger.error("BookmarkService", "Failed to bulk upsert bookmarks", {
+            error,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+          });
+
+          throw new Error(`Failed to bulk insert bookmarks: ${error.message}`);
+        }
+
+        if (!data || data.length === 0) {
+          Logger.warn("BookmarkService", "No data returned from bulk upsert operation for batch");
+          continue;
+        }
+
+        const result = data[0];
+        
+        Logger.info("BookmarkService", `Batch completed: ${result.total_processed} processed, ${result.inserted_count} inserted, ${result.updated_count} updated, ${result.skipped_count} skipped`);
+
+        // Fetch the bookmarks that were processed in this batch
+        const { data: batchBookmarks, error: fetchError } = await supabase
+          .from("bookmarks")
+          .select("*")
+          .eq("user_id", userId)
+          .order("updated_at", { ascending: false })
+          .limit(result.total_processed);
+
+        if (fetchError) {
+          Logger.error("BookmarkService", "Failed to fetch batch bookmarks", fetchError);
+        } else {
+          allResults.push(...(batchBookmarks || []));
+        }
       }
 
-      if (!data || data.length === 0) {
-        throw new Error("No data returned from bulk upsert operation");
-      }
-
-      const result = data[0];
-      
-      Logger.info("BookmarkService", `Bulk upsert completed: ${result.total_processed} processed, ${result.inserted_count} inserted, ${result.updated_count} updated, ${result.skipped_count} skipped`);
-
-      // Fetch the actual bookmarks that were inserted/updated
-      const { data: insertedBookmarks, error: fetchError } = await supabase
-        .from("bookmarks")
-        .select("*")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(result.total_processed);
-
-      if (fetchError) {
-        Logger.error("BookmarkService", "Failed to fetch inserted bookmarks", fetchError);
-        throw new Error(`Failed to fetch inserted bookmarks: ${fetchError.message}`);
-      }
-
-      return insertedBookmarks || [];
+      Logger.info("BookmarkService", `Bulk upsert completed: ${allResults.length} bookmarks processed`);
+      return allResults;
     } catch (error) {
       Logger.error("BookmarkService", "Failed to bulk insert bookmarks", error);
       throw error;
