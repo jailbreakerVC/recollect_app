@@ -260,7 +260,7 @@ export class BookmarkService {
 
       const result = data[0];
       return {
-        exists: result.exists,
+        exists: result.bookmark_exists,
         bookmarkId: result.bookmark_id,
         existingTitle: result.existing_title,
         existingUrl: result.existing_url,
